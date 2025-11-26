@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  web:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ./config.json:/app/config.json
+      - ./db.sqlite3:/app/db.sqlite3
+    environment:
+      - SHODAN_API_KEY=${SHODAN_API_KEY}
+      - GMAIL_EMAIL=${GMAIL_EMAIL:-}
+      - GMAIL_PASSWORD=${GMAIL_PASSWORD:-}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    command: celery -A leaklooker worker --loglevel=info --concurrency=1 --pool=solo
+    volumes:
+      - .:/app
+      - ./config.json:/app/config.json
+      - ./db.sqlite3:/app/db.sqlite3
+    environment:
+      - SHODAN_API_KEY=${SHODAN_API_KEY}
+      - GMAIL_EMAIL=${GMAIL_EMAIL:-}
+      - GMAIL_PASSWORD=${GMAIL_PASSWORD:-}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  beat:
+    build: .
+    command: celery -A leaklooker beat --loglevel=info
+    volumes:
+      - .:/app
+      - ./config.json:/app/config.json
+      - ./db.sqlite3:/app/db.sqlite3
+    environment:
+      - SHODAN_API_KEY=${SHODAN_API_KEY}
+      - GMAIL_EMAIL=${GMAIL_EMAIL:-}
+      - GMAIL_PASSWORD=${GMAIL_PASSWORD:-}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
