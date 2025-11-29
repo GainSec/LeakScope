@@ -1,4 +1,4 @@
-# LeakScope (LeakLooker X GUI)
+# LeakScope
 
 Search, triage, and preview exposed services and code leaks using Shodan.
 
