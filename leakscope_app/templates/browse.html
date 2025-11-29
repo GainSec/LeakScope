@@ -1,0 +1,540 @@
+
+<!doctype html>
+<html class="no-js" lang="">
+{% load static %}
+{% block page_content %}
+{% load new_line %}
+{% load replace %}
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>LeakScope by GainSec | {{ type }}</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- favicon
+		============================================ -->
+    <link rel="shortcut icon" type="image/x-icon" href="img/favicon.ico">
+    <!-- Google Fonts
+		============================================ -->
+    <link href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,700,900" rel="stylesheet">
+    <!-- Bootstrap CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+    <!-- Bootstrap CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/font-awesome.min.css' %}">
+    <!-- owl.carousel CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/owl.carousel.css' %}">
+    <link rel="stylesheet" href="{% static 'css/owl.theme.css' %}">
+    <link rel="stylesheet" href="{% static 'css/owl.transitions.css' %}">
+    <!-- meanmenu CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/meanmenu/meanmenu.min.css' %}">
+    <!-- animate CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/animate.css' %}">
+    <!-- normalize CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/normalize.css' %}">
+    <!-- mCustomScrollbar CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/scrollbar/jquery.mCustomScrollbar.min.css' %}">
+    <!-- jvectormap CSS
+		============================================ -->
+    <!-- notika icon CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/notika-custom-icon.css' %}">
+    <!-- wave CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/wave/waves.min.css' %}">
+    <!-- main CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    <!-- style CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <!-- responsive CSS
+		============================================ -->
+
+
+        <link rel="stylesheet" href="{% static 'css/jquery.dataTables.min.css' %}">
+
+        <link rel="stylesheet" href="{% static 'css/wave/button.css' %}">
+    <link rel="stylesheet" href="{% static 'css/responsive.css' %}">
+    <!-- modernizr JS
+		============================================ -->
+    <script src="{% static 'js/vendor/modernizr-2.8.3.min.js' %}"></script>
+
+</head>
+<style>
+    td {word-wrap: break-word;}
+</style>
+<body>
+    <!--[if lt IE 8]>
+            <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="http://browsehappy.com/">upgrade your browser</a> to improve your experience.</p>
+        <![endif]-->
+    <!-- Start Header Top Area -->
+    <div class="header-top-area">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-4 col-md-4 col-sm-12 col-xs-12">
+                    <div class="logo-area">
+                        <a href="{% url 'home' %}"><img src="{% static 'img/leakscope.png' %}" /></a>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+    <!-- End Header Top Area -->
+    <!-- Mobile Menu start -->
+
+    <!-- Mobile Menu end -->
+    <!-- Main Menu area start-->
+    <div class="main-menu-area mg-tb-40">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
+                    <ul class="nav nav-tabs notika-menu-wrap menu-it-icon-pro">
+                        <li ><a href="{% url 'home' %}"><i class="notika-icon notika-house"></i> Home</a>
+                        </li>
+                        <li><a href="{% url 'keyword' %}"><i class="notika-icon notika-search"></i> Discover</a></li>
+                        <li><a href="{% url 'database' %}"><i class="notika-icon notika-edit"></i> Database</a>
+                        </li>
+                        <li><a href="{% url 'custom_queries' %}"><i class="notika-icon notika-star"></i> Custom Query</a>
+                        </li>
+                        <li><a href="{% url 'preview_page' %}"><i class="notika-icon notika-down-arrow"></i> Preview</a>
+                        </li>
+                        <li><a href="{% url 'explore_page' %}"><i class="notika-icon notika-eye"></i> Explore</a></li>
+                        <li><a href="{% url 'export_import' %}"><i class="notika-icon notika-support"></i> Export/Import</a>
+                        </li>
+                    </ul>
+                    <div class="tab-content custom-menu-content">
+                        <div id="Home" class="tab-pane in active notika-tab-menu-bg animated flipInX">
+
+                        </div>
+                        <div id="search" class="tab-pane notika-tab-menu-bg animated flipInX">
+                            <ul class="notika-main-menu-dropdown">
+                                <li><a href="{% url 'keyword' %}">Keyword</a>
+                                </li>
+                            </ul>
+                        </div>
+
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+	<!-- Breadcomb area End-->
+    <div class="container">
+        <div class="row">
+                <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
+                    <div class="form-element-list">
+                        <div class="row">
+
+                        </div>
+<div class="table-responsive">
+                            <table id="data-table-basic" class="table table-striped" style="table-layout:fixed;">
+                                <thead>
+                                    <tr>
+                                        {% if type != "github" %}
+                                        <th>Keyword</th>
+
+                                        {% endif %}
+                                {% if type == "elastic" %}
+                                        <th>IP</th>
+                                        <th>Cluster Name</th>
+                                        <th>Size</th>
+                                        <th>Indicator</th>
+                                        <th>Indices</th>
+                                        {% elif type == "dirs" %}
+                                                                                <th>URL</th>
+                                        <th>Indicator</th>
+                                        <th>Directories</th>
+                                        {% elif type == "ftp" %}
+                                                                 <th>URL</th>
+                                                                <th>Indicator</th>
+                                        <th>Directories</th>
+                                        {% elif type == "jenkins" %}
+                                        <th>URL</th>
+                                        <th>Indicator</th>
+                                        <th>Jobs</th>
+                                        {% elif type == "keys" %}
+                                        <th>IP</th>
+                                        <th>Title</th>
+                                        {% elif type == "angular" %}
+                                        <th>IP</th>
+                                        <th>Title</th>
+                                        <th>Path</th>
+                                        {% elif type == "mongo" %}
+                                        <th>IP</th>
+                                                                                <th>Size</th>
+                                        <th>Indicator</th>
+                                        <th>Databases</th>
+                                          {% elif type == "amazonbe" %}
+                                        <th>IP</th>
+                                                                                <th>Buckets</th>
+                                        {% elif type == "amazons3be" %}
+                                        <th>IP</th>
+                                                                                <th>Indicator</th>
+                                        <th>Files</th>
+                                        {% elif type == "kibana" %}
+                                        <th>IP</th>
+                                        {% elif type == "sonarqube" %}
+                                        <th>IP</th>
+                                        {% elif type == "rethink" %}
+                                        <th>IP</th>
+                                        <th>Databases</th>
+                                        {% elif type == "cassandra" %}
+                                        <th>IP</th>
+                                                                                <th>Keyspaces</th>
+
+                                        {% elif type == "rsync" %}
+                                        <th>IP</th>
+
+                                                                                <th>Shares</th>
+                                        {% elif type == "amazonbuckets" %}
+                                                                                <th>Bucket</th>
+                                        {% elif type == "gitlab" %}
+                                        <th>IP</th>
+                                        {% elif type == "couchdb" %}
+                                        <th>IP</th>
+                                        {% elif type == "javascript" %}
+                                        <th>IP</th>
+                                        <th>Secret</th>
+
+                                        {% elif type == "github" %}
+                                                                                <th>Commit</th>
+                                         <th>Secret</th>
+                                         <th>Path</th>
+
+
+                                        {% else %}
+                                        {% endif %}
+
+
+                                                                                <th>Created on</th>
+
+                                        <th>Action</th>
+
+                                        <th>Additional</th>
+                                    </tr>
+
+                                </thead>
+                                    {% for git in all %}
+
+                                    {% if git.confirmed %}
+                                                <tr id="{{ git.ip }}{{ git.bucket }}{{ git.commit }}" style="background:#1caf9a">
+                                                    {% elif git.for_later %}
+                                                    <tr id="{{ git.ip }}{{ git.bucket }}{{ git.commit }}" style="background:#2196F3">
+                                        {% else %}
+                                                                                            <tr id="{{ git.ip }}{{ git.bucket }}{{ git.commit }}">
+
+                                                {% endif %}
+                                        {% if type != "github" %}
+
+
+                                        <td> {{ git.search.keyword }} {{ git.search.country }} {{ git.search.network }}</td>
+
+                                {% endif %}
+                                {% if type == "elastic" %}
+                                <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}/_cat/indices">https://{{ git.ip }}:{{ git.port }}/_cat/indices</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}/_cat/indices">http://{{ git.ip }}:{{ git.port }}/_cat/indices</a>
+                                            {% endif %}
+                                            </td>
+                                <td>{{ git.name }}</td>
+                                <td>{{ git.size }}</td>
+                                <td>{{ git.indicator|slice:"1:-1"|new_line|safe }}</td>
+                                <td style="word-wrap: break-word">{{ git.indices|slice:"1:-1"|new_line|safe }}</td>
+                                {% elif type == "github" %}
+                                <td style="word-wrap: break-word">{{ git.keyword }}/commit/{{ git.commit }}</td>
+                                <td style="word-wrap: break-word">{{ git.secret|slice:"1:-1"|new_line|safe }}</td>
+                                <td>{{ git.path|slice:"1:-1"|new_line|safe }}</td>
+                                <td> </td>
+
+                                {% elif type == "dirs" %}
+                                                                <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}">https://{{ git.ip }}:{{ git.port }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}">http://{{ git.ip }}:{{ git.port }}</a>
+                                            {% endif %}
+                                            </td>
+                                <td>{{ git.indicator|slice:"1:-1"|new_line|safe }}</td>
+
+                                                                <td style="word-wrap: break-word">{{ git.dirs|slice:"1:-1"|new_line|safe }}</td>
+
+                                {% elif type == 'sonarqube' %}
+                                        <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}">https://{{ git.ip }}:{{ git.port }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}">http://{{ git.ip }}:{{ git.port }}</a>
+                                            {% endif %}
+                                            </td>
+                                {% elif type == 'javascript' %}
+                                        <td style="word-wrap: break-word">
+
+                                            <a href="http://{{ git.path }}">http://{{ git.path }}</a>
+                                            </td>
+                                             <td style="word-wrap: break-word">{{ git.secrets|slice:"1:-1"|new_line|safe }}</td>
+                                {% elif type == "ftp" %}
+
+
+                                                                <td><a href="ftp://{{git.ip}}:{{git.port}}">ftp://{{git.ip}}:{{git.port}}</a></td>
+                                <td>{{ git.indicator|slice:"1:-1"|new_line|safe }}</td>
+
+                                                                <td style="word-wrap: break-word"> {{ git.files|slice:"1:-1"|new_line|safe }}</td>
+                                {% elif type == "amazons3be" %}
+
+ <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}">https://{{ git.ip }}:{{ git.port }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}">http://{{ git.ip }}:{{ git.port }}</a>
+                                            {% endif %}
+                                            </td>                                <td>{{ git.indicator|slice:"1:-1"|new_line|safe }}</td>
+
+                                                                <td style="word-wrap: break-word"> {{ git.files|slice:"1:-1"|new_line|safe }}</td>
+
+                                {% elif type == "jenkins" %}
+                                                                <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}">https://{{ git.ip }}:{{ git.port }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}">http://{{ git.ip }}:{{ git.port }}</a>
+                                            {% endif %}
+                                            </td>
+                                <td>{{ git.indicator|slice:"1:-1"|new_line|safe }}</td>
+
+                                                                <td style="word-wrap: break-word">{{ git.jobs|slice:"1:-1"|new_line|safe }}</td>
+                                {% elif type == "gitlab" %}
+                                 <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}">https://{{ git.ip }}:{{ git.port }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}">http://{{ git.ip }}:{{ git.port }}</a>
+                                            {% endif %}
+                                            </td>
+                                {% elif type == "mongo" %}
+                                <td>{{ git.ip }}:{{ git.port }}</td>
+                                <td>{{ git.size }}</td>
+                                <td>{{ git.indicator|slice:"1:-1"|new_line|safe }}</td>
+
+                                                                <td style="word-wrap: break-word">{{ git.databases|slice:"1:-1"|new_line|safe }}</td>
+                                {% elif type == "rsync" %}
+                                                                <td>{{ git.ip }}:{{ git.port }}</td>
+
+                                <td>{{ git.shares }}</td>
+                                {% elif type == "amazonbe" %}
+                                                 <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}">https://{{ git.ip }}:{{ git.port }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}">http://{{ git.ip }}:{{ git.port }}</a>
+                                            {% endif %}
+                                            </td>
+                                <td style="word-wrap: break-word"><a href='https://{{ git.buckets|slice:"1:-1"|new_line|safe|replace }}'>https://{{ git.buckets|slice:"1:-1"|new_line|safe|replace }}</a> </td>
+                                {% elif type == "rethink" %}
+                                                 <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}">https://{{ git.ip }}:{{ git.port }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}">http://{{ git.ip }}:{{ git.port }}</a>
+                                            {% endif %}
+                                            </td>
+                                <td style="word-wrap: break-word">{{ git.databases|slice:"1:-1"|new_line|safe }}</td>
+                                {% elif type == "keys" %}
+                                                 <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}">https://{{ git.ip }}:{{ git.port }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}">http://{{ git.ip }}:{{ git.port }}</a>
+                                            {% endif %}
+                                            </td>
+                                <td>{{ git.title }}</td>
+                                {% elif type == "angular" %}
+                                                 <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}">https://{{ git.ip }}:{{ git.port }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}">http://{{ git.ip }}:{{ git.port }}</a>
+                                            {% endif %}
+                                            </td>
+                                <td>{{ git.title }}</td>
+                                <td>
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.path }}">https://{{ git.path }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.path }}">http://{{ git.path }}</a>
+                                            {% endif %}
+                                            </td>
+                                {% elif type == "couchdb" %}
+                                                 <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}/_all_dbs">https://{{ git.ip }}:{{ git.port }}/_all_dbs</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}/_all_dbs">http://{{ git.ip }}:{{ git.port }}/_all_dbs</a>
+                                            {% endif %}
+                                            </td>
+                                {% elif type == "kibana" %}
+                                 <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}">https://{{ git.ip }}:{{ git.port }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}">http://{{ git.ip }}:{{ git.port }}</a>
+                                            {% endif %}
+                                            </td>
+                                {% elif type == "cassandra" %}
+                                 <td style="word-wrap: break-word">
+                                            {% if git.port == "443" or git.port == "8443" %}
+                                            <a href="https://{{ git.ip }}:{{ git.port }}">https://{{ git.ip }}:{{ git.port }}</a>
+                                            {% else %}
+                                            <a href="http://{{ git.ip }}:{{ git.port }}">http://{{ git.ip }}:{{ git.port }}</a>
+                                            {% endif %}
+                                            </td>
+                                <td style="word-wrap: break-word"> {{ git.keyspaces|slice:"1:-1"|new_line|safe }}</td>
+                                {% elif type == "amazonbuckets" %}
+                                <td style="word-wrap: break-word"> <a href='https://{{ git.bucket|slice:"1:-1"|new_line|safe|replace }}'>https://{{ git.bucket }}</a></td>
+
+
+                                {% endif %}
+{% if type != "github" or type != "javascript" %}
+
+                                <td>{{ git.search.created_on }}</td>
+{% endif %}
+                                    <td>
+                                        <button data-type="{{ git.search.type }}" data-ip="{{ git.ip }}" class="btn btn-warning hide-entry waves-effect">
+                                            <i class="notika-icon notika-close"></i> Hide
+                                        </button>
+                                        <a class="btn btn-info" href="/preview/?type={{ git.search.type }}&target_id={{ git.id }}" title="Preview (active probing)"><i class="notika-icon notika-down-arrow"></i></a>
+                                    </td>
+  {% if git.confirmed %}
+                                                <td>Confirmed</td>
+                                                    {% elif git.for_later %}
+                                                    <td>For later</td>
+                                        {% else %}
+                                                                                           <td></td>
+
+                                                {% endif %}
+                                    </tr>
+                                                                    {% endfor %}
+
+                                </thead>
+                                <tbody>
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <th>Url</th>
+                                        <th>IP</th>
+                                        <th>Port</th>
+                                        <th>Created on</th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+</div>
+                    </div>
+                </div>
+            </div></div>
+    <!-- Start Footer area-->
+    <div class="footer-copyright-area">
+
+    </div>
+    <!-- End Footer area-->
+    <!-- jquery
+
+		============================================ -->
+
+
+<script src="{% static 'js/vendor/jquery-1.12.4.min.js' %}"></script>
+    <!-- bootstrap JS
+		============================================ -->
+    <script src="{% static 'js/bootstrap.min.js' %}"></script>
+    <!-- wow JS
+		============================================ -->
+    <script src="{% static 'js/wow.min.js' %}"></script>
+    <!-- price-slider JS
+		============================================ -->
+    <script src="{% static 'js/jquery-price-slider.js' %}"></script>
+    <!-- owl.carousel JS
+		============================================ -->
+    <script src="{% static 'js/owl.carousel.min.js' %}"></script>
+    <!-- scrollUp JS
+		============================================ -->
+    <script src="{% static 'js/jquery.scrollUp.min.js' %}"></script>
+    <!-- meanmenu JS
+		============================================ -->
+    <script src="{% static 'js/meanmenu/jquery.meanmenu.js' %}"></script>
+    <!-- counterup JS
+		============================================ -->
+    <script src="{% static 'js/counterup/jquery.counterup.min.js' %}"></script>
+    <script src="{% static 'js/counterup/waypoints.min.js' %}"></script>
+    <script src="{% static 'js/counterup/counterup-active.js' %}"></script>
+    <!-- mCustomScrollbar JS
+		============================================ -->
+    <script src="{% static 'js/scrollbar/jquery.mCustomScrollbar.concat.min.js' %}"></script>
+    <!-- sparkline JS
+		============================================ -->
+    <!-- flot JS
+		============================================ -->
+    <script src="{% static 'js/flot/jquery.flot.js' %}"></script>
+    <script src="{% static 'js/flot/jquery.flot.resize.js' %}"></script>
+    <script src="{% static 'js/flot/flot-active.js' %}"></script>
+    <!-- knob JS
+		============================================ -->
+    <script src="{% static 'js/knob/jquery.knob.js' %}"></script>
+    <script src="{% static 'js/knob/jquery.appear.js' %}"></script>
+    <script src="{% static 'js/knob/knob-active.js' %}"></script>
+    <!--  Chat JS
+		============================================ -->
+	<!--  wave JS
+		============================================ -->
+    <script src="{% static 'js/wave/waves.min.js' %}"></script>
+    <script src="{% static 'js/wave/wave-active.js' %}"></script>
+    <!-- plugins JS
+		============================================ -->
+    <script src="{% static 'js/plugins.js' %}"></script>
+    <!-- Data Table JS
+		============================================ -->
+    <script src="{% static 'js/data-table/jquery.dataTables.min.js' %}"></script>
+    <script src="{% static 'js/data-table/data-table-act.js' %}"></script>
+    <!-- main JS
+		============================================ -->
+    <script src="{% static 'js/main.js' %}"></script>
+    <script>
+        document.addEventListener('click', function(e){
+            if (e.target.closest('.hide-entry')) {
+                const btn = e.target.closest('.hide-entry');
+                const ip = btn.getAttribute('data-ip');
+                const type = (btn.getAttribute('data-type') || '').toLowerCase();
+                const url = `/hide/${encodeURIComponent(type)}/${encodeURIComponent(ip)}`;
+                fetch(url)
+                    .then(res => {
+                        if (!res.ok) throw new Error('Failed to hide');
+                        return res.json();
+                    })
+                    .then(() => {
+                        const row = btn.closest('tr');
+                        if (row) row.remove();
+                    })
+                    .catch(err => alert('Could not hide entry: ' + err.message));
+            }
+        });
+    </script>
+
+
+    <footer style="padding: 20px 0; text-align: center; color: #777; font-size: 14px;">
+        By <a href="https://gainsec.com/" target="_blank" rel="noopener noreferrer">GainSec</a>
+    </footer>
+
+</body>
+
+</html>
+{% endblock %}

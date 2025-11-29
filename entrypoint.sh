@@ -11,6 +11,8 @@ if [ -n "$CELERY_BROKER_URL" ]; then
   done
 fi
 
-python manage.py migrate --noinput
+if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
+  python manage.py migrate --noinput
+fi
 
 exec "$@"

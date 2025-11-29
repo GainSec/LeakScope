@@ -1,0 +1,369 @@
+<!doctype html>
+<html class="no-js" lang="">
+{% load static %}
+{% block page_content %}
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>LeakScope | Explore</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/font-awesome.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/normalize.css' %}">
+    <link rel="stylesheet" href="{% static 'css/animate.css' %}">
+    <link rel="stylesheet" href="{% static 'css/notika-custom-icon.css' %}">
+    <link rel="stylesheet" href="{% static 'css/meanmenu/meanmenu.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/scrollbar/jquery.mCustomScrollbar.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+</head>
+<body>
+    <div class="header-top-area">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-4 col-md-4 col-sm-12 col-xs-12">
+                    <div class="logo-area">
+                        <a href="{% url 'home' %}"><img src="{% static 'img/leakscope.png' %}" /></a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="main-menu-area mg-tb-40">
+       <div class="container">
+            <div class="row">
+                <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
+                    <ul class="nav nav-tabs notika-menu-wrap menu-it-icon-pro">
+                        <li><a href="{% url 'home' %}"><i class="notika-icon notika-house"></i> Home</a></li>
+                        <li><a data-toggle="tab" href="#search"><i class="notika-icon notika-search"></i> Discover</a></li>
+                        <li><a href="{% url 'database' %}"><i class="notika-icon notika-edit"></i> Database</a></li>
+                        <li><a href="{% url 'custom_queries' %}"><i class="notika-icon notika-star"></i> Custom Query</a></li>
+                        <li><a href="{% url 'preview_page' %}"><i class="notika-icon notika-down-arrow"></i> Preview</a></li>
+                        <li class="active"><a href="{% url 'explore_page' %}"><i class="notika-icon notika-eye"></i> Explore</a></li>
+                        <li><a href="{% url 'export_import' %}"><i class="notika-icon notika-support"></i> Export/Import</a></li>
+                    </ul>
+                    <div class="tab-content custom-menu-content">
+                        <div id="Home" class="tab-pane in active notika-tab-menu-bg animated flipInX"></div>
+                        <div id="search" class="tab-pane notika-tab-menu-bg animated flipInX">
+                            <ul class="notika-main-menu-dropdown">
+                                <li><a href="{% url 'keyword' %}">Keyword</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+<div class="container" style="margin-top:20px;">
+    <h1>Explore</h1>
+    <p class="text-muted">Active-probing explorer with type-aware controls and scoped export.</p>
+    <div class="row" style="margin-bottom:10px;">
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <label>Type</label>
+            <select id="explore_type" class="form-control">
+                <option value="">Select</option>
+                {% for t in types %}
+                <option value="{{ t }}">{{ t }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <label>Target</label>
+            <select id="explore_target" class="form-control">
+                <option value="">Select a target</option>
+            </select>
+        </div>
+        <div class="col-lg-2 col-md-4 col-sm-6" style="margin-top:24px;">
+            <label class="checkbox-inline">
+                <input type="checkbox" id="explore_active" checked> Enable Active Probing
+            </label>
+        </div>
+        <div class="col-lg-2 col-md-4 col-sm-6" style="margin-top:24px;">
+            <button class="btn btn-primary" id="start_explore" disabled>Start Explore</button>
+        </div>
+    </div>
+
+    <div id="controls_panel" style="display:none; margin-bottom:15px; padding:10px; border:1px solid #243b55; background:#0f1c34;">
+        <h4>Controls</h4>
+        <div class="row" id="row_index_db">
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <label id="label_index_db">Index/DB</label>
+                <select id="field_index_db" class="form-control"></select>
+            </div>
+            <div class="col-lg-3 col-md-4 col-sm-6" id="col_collection">
+                <label>Collection</label>
+                <select id="field_collection" class="form-control"></select>
+            </div>
+        </div>
+        <div class="row" id="row_repo_bucket">
+            <div class="col-lg-3 col-md-4 col-sm-6" id="col_repo">
+                <label>Repo</label>
+                <select id="field_repo" class="form-control"></select>
+            </div>
+            <div class="col-lg-3 col-md-4 col-sm-6" id="col_bucket">
+                <label>Bucket</label>
+                <select id="field_bucket" class="form-control"></select>
+            </div>
+            <div class="col-lg-3 col-md-4 col-sm-6" id="col_keyspace">
+                <label>Keyspace/DB</label>
+                <select id="field_keyspace" class="form-control"></select>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-lg-3 col-md-4 col-sm-6" id="col_filter">
+                <label>Filter</label>
+                <input type="text" id="field_filter" class="form-control" placeholder="filter substring">
+            </div>
+            <div class="col-lg-2 col-md-3 col-sm-6" id="col_max_items">
+                <label>Max items</label>
+                <input type="number" id="field_max_items" class="form-control" value="1000" min="1" max="5000">
+            </div>
+            <div class="col-lg-2 col-md-3 col-sm-6" id="col_max_repos">
+                <label>Max repos</label>
+                <input type="number" id="field_max_repos" class="form-control" value="200" min="1" max="5000">
+            </div>
+            <div class="col-lg-2 col-md-3 col-sm-6" id="col_max_tags">
+                <label>Max tags</label>
+                <input type="number" id="field_max_tags" class="form-control" value="100" min="1" max="1000">
+            </div>
+            <div class="col-lg-2 col-md-3 col-sm-6" id="col_format">
+                <label>Format</label>
+                <select id="field_format" class="form-control">
+                    <option value="json">JSON</option>
+                    <option value="csv">CSV</option>
+                </select>
+            </div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+            <div class="col-lg-2 col-md-3 col-sm-6">
+                <button class="btn btn-info" id="btn_preview_selection">Preview selection</button>
+            </div>
+            <div class="col-lg-2 col-md-3 col-sm-6">
+                <button class="btn btn-success" id="btn_export_selection">Export selection</button>
+            </div>
+            <div class="col-lg-8 col-md-6 col-sm-12">
+                <span id="explore_status" class="text-info"></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel panel-default">
+        <div class="panel-heading">Results</div>
+        <div class="panel-body">
+            <table class="table table-striped" id="explore_results">
+                <thead>
+                    <tr><th>Field</th><th>Value</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="{% static 'js/vendor/jquery-1.12.4.min.js' %}"></script>
+<script>
+const typeConfig = {
+    elastic: ['index_db','max_items','format'],
+    opensearch: ['index_db','max_items','format'],
+    mongo: ['index_db','collection','max_items','format'],
+    mongoexpress: ['index_db','collection','max_items','format'],
+    couchdb: ['index_db','max_items','format'],
+    registry: ['repo','max_repos','max_tags','format'],
+    harbor: ['repo','max_repos','max_tags','format'],
+    dockerapi: ['repo','max_repos','max_tags','format'],
+    nexus: ['repo','format'],
+    artifactory: ['repo','format'],
+    amazons3be: ['bucket','filter','max_items','format'],
+    amazonbuckets: ['bucket','filter','max_items','format'],
+    amazonbe: ['bucket','filter','max_items','format'],
+    minio: ['bucket','filter','max_items','format'],
+    dirs: ['filter','max_items','format'],
+    jenkins: ['filter','max_items','format'],
+    ftp: ['filter','max_items','format'],
+    rsync: ['filter','max_items','format'],
+    cassandra: ['keyspace','filter','format'],
+    rethink: ['index_db','filter','format'],
+    javascript: ['filter','max_items','format'],
+    github: ['filter','max_items','format'],
+    keys: ['filter','max_items','format'],
+    swagger: ['filter','max_items','format'],
+    angular: ['filter','max_items','format'],
+    grafana: ['filter','max_items','format'],
+    prometheus: ['filter','max_items','format'],
+    gitlab: ['filter','max_items','format'],
+    sonarqube: ['filter','max_items','format'],
+    kibana: ['filter','max_items','format']
+};
+
+function showControlsForType(type){
+    const cfg = typeConfig[type] || ['format'];
+    $('#controls_panel').show();
+    const show = (id, flag) => flag ? $('#'+id).show() : $('#'+id).hide();
+    show('row_index_db', cfg.includes('index_db'));
+    show('col_collection', cfg.includes('collection'));
+    show('col_repo', cfg.includes('repo'));
+    show('col_bucket', cfg.includes('bucket'));
+    show('col_keyspace', cfg.includes('keyspace'));
+    show('col_filter', cfg.includes('filter'));
+    show('col_max_items', cfg.includes('max_items'));
+    show('col_max_repos', cfg.includes('max_repos'));
+    show('col_max_tags', cfg.includes('max_tags'));
+    show('col_format', cfg.includes('format'));
+}
+
+function renderOptions(type, opts){
+    const fill = (sel, arr, placeholder) => {
+        const el = $(sel);
+        el.empty();
+        el.append('<option value="">'+placeholder+'</option>');
+        (arr || []).forEach(v => el.append('<option value="'+v+'">'+v+'</option>'));
+    };
+    fill('#field_index_db', opts.indices || opts.dbs || [], 'Select index/db');
+    fill('#field_collection', opts.collections || [], 'Select collection');
+    fill('#field_repo', opts.repos || [], 'Select repo');
+    fill('#field_bucket', opts.buckets || [], 'Select bucket');
+    fill('#field_keyspace', opts.keyspaces || [], 'Select keyspace');
+}
+
+function renderResults(obj){
+    const tbody = $('#explore_results tbody');
+    tbody.empty();
+    if (!obj) {
+        tbody.append('<tr><td colspan="2">No data.</td></tr>');
+        return;
+    }
+    Object.keys(obj).forEach(function(k, idx){
+        const val = typeof obj[k] === 'object' ? JSON.stringify(obj[k]) : obj[k];
+        tbody.append('<tr><td>'+k+'</td><td style="word-break:break-word;">'+val+'</td></tr>');
+    });
+}
+
+function renderList(items){
+    const tbody = $('#explore_results tbody');
+    tbody.empty();
+    if (!items || items.length === 0){
+        tbody.append('<tr><td colspan="2">No items.</td></tr>');
+        return;
+    }
+    items.forEach(function(v, idx){
+        const val = (typeof v === 'object') ? JSON.stringify(v) : v;
+        tbody.append('<tr><td>Item '+(idx+1)+'</td><td style="word-break:break-word;">'+val+'</td></tr>');
+    });
+}
+
+function gatherSelection(type){
+    return {
+        index: $('#field_index_db').val(),
+        db: $('#field_index_db').val(),
+        collection: $('#field_collection').val(),
+        repo: $('#field_repo').val(),
+        bucket: $('#field_bucket').val(),
+        keyspace: $('#field_keyspace').val(),
+        filter: $('#field_filter').val(),
+        max_items: $('#field_max_items').val(),
+        max_repos: $('#field_max_repos').val(),
+        max_tags: $('#field_max_tags').val(),
+        format: $('#field_format').val(),
+        active_probe: $('#explore_active').is(':checked') ? '1' : '0'
+    };
+}
+
+$(function(){
+    function loadTargets(type){
+        $('#explore_target').empty().append('<option value=\"\">Loading...</option>');
+        if (!type){
+            $('#explore_target').html('<option value=\"\">Select a target</option>');
+            $('#start_explore').prop('disabled', true);
+            return;
+        }
+        $.get('/preview/targets', {type:type}, function(resp){
+            const sel = $('#explore_target');
+            sel.empty().append('<option value=\"\">Select a target</option>');
+            (resp.results || []).forEach(r => sel.append('<option value="'+r.id+'">'+r.label+'</option>'));
+        });
+    }
+
+    $('#explore_type').change(function(){
+        const t = $(this).val();
+        loadTargets(t);
+        showControlsForType(t);
+    });
+
+    $('#explore_target').change(function(){
+        $('#start_explore').prop('disabled', $(this).val()==="");
+    });
+
+    $('#start_explore').click(function(e){
+        e.preventDefault();
+        const type = $('#explore_type').val();
+        const target = $('#explore_target').val();
+        const active = $('#explore_active').is(':checked') ? '1' : '0';
+        if (!type || !target){ alert('Select type and target'); return; }
+        if (active !== '1'){ alert('Active probing must be enabled'); return; }
+        $('#explore_status').text('Starting explore...');
+        $.get('/explore/start', {type:type, target_id:target, active_probe:active}, function(resp){
+            showControlsForType(type);
+            renderOptions(type, resp.export_options || {});
+            $('#explore_status').text('Explore ready. Select options and preview/export.');
+        }).fail(function(resp){
+            $('#explore_status').text(resp.responseJSON ? (resp.responseJSON.error || 'Explore failed') : 'Explore failed');
+        });
+    });
+
+    $('#btn_preview_selection').click(function(e){
+        e.preventDefault();
+        const type = $('#explore_type').val();
+        const target = $('#explore_target').val();
+        const sel = gatherSelection(type);
+        if (!type || !target){ alert('Select type and target'); return; }
+        if (sel.active_probe !== '1'){ alert('Active probing must be enabled'); return; }
+        $('#explore_status').text('Fetching selection...');
+        sel.type = type;
+        sel.target_id = target;
+        $.get('/explore/next', sel, function(resp){
+            renderList(resp.items || []);
+            $('#explore_status').text('Selection loaded.');
+        }).fail(function(resp){
+            $('#explore_status').text(resp.responseJSON ? (resp.responseJSON.error || 'Failed') : 'Failed');
+        });
+    });
+
+    $('#btn_export_selection').click(function(e){
+        e.preventDefault();
+        const type = $('#explore_type').val();
+        const target = $('#explore_target').val();
+        const sel = gatherSelection(type);
+        if (!type || !target){ alert('Select type and target'); return; }
+        if (sel.active_probe !== '1'){ alert('Active probing must be enabled'); return; }
+        const payload = Object.assign({type:type, target_id:target}, sel);
+        $('#explore_status').text('Starting export...');
+        $.get('/export/start', payload, function(resp){
+            function pollExport(id){
+                $.get('/get-task-info/', {task_id:id}, function(data){
+                    if (data.state === 'SUCCESS' && data.result && data.result.download_token){
+                        const link = '/export/download/' + data.result.download_token;
+                        $('#explore_status').html('Export ready: <a href="'+link+'">download</a>');
+                    } else if (data.state === 'FAILURE') {
+                        $('#explore_status').text('Export failed: ' + data.result);
+                    } else if (data.state === 'SKIPPED' || (data.result && data.result.requires_active)) {
+                        $('#explore_status').text('Export skipped; enable active probing.');
+                    } else {
+                        setTimeout(function(){ pollExport(id); }, 500);
+                    }
+                }).fail(function(){
+                    setTimeout(function(){ pollExport(id); }, 500);
+                });
+            }
+            pollExport(resp.task_id);
+        }).fail(function(resp){
+            $('#explore_status').text(resp.responseJSON ? (resp.responseJSON.error || 'Export failed') : 'Export failed');
+        });
+    });
+});
+</script>
+    <footer style="padding: 20px 0; text-align: center; color: #777; font-size: 14px;">
+        By <a href="https://gainsec.com/" target="_blank" rel="noopener noreferrer">GainSec</a>
+    </footer>
+</body>
+</html>
+{% endblock %}

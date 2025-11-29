@@ -1,0 +1,343 @@
+<!doctype html>
+<html class="no-js" lang="">
+{% load static %}
+{% block page_content %}
+
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>LeakScope by GainSec | Preview</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'css/jquery.dataTables.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/wave/button.css' %}">
+    <link rel="shortcut icon" type="image/x-icon" href="img/favicon.ico">
+    <link href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,700,900" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/font-awesome.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/owl.carousel.css' %}">
+    <link rel="stylesheet" href="{% static 'css/owl.theme.css' %}">
+    <link rel="stylesheet" href="{% static 'css/owl.transitions.css' %}">
+    <link rel="stylesheet" href="{% static 'css/meanmenu/meanmenu.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/dialog/sweetalert2.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/dialog/dialog.css' %}">
+    <link rel="stylesheet" href="{% static 'css/animate.css' %}">
+    <link rel="stylesheet" href="{% static 'css/normalize.css' %}">
+    <link rel="stylesheet" href="{% static 'css/scrollbar/jquery.mCustomScrollbar.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/notika-custom-icon.css' %}">
+    <link rel="stylesheet" href="{% static 'css/wave/waves.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/responsive.css' %}">
+    <script src="{% static 'js/vendor/modernizr-2.8.3.min.js' %}"></script>
+</head>
+
+<body>
+    <div class="header-top-area">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-4 col-md-4 col-sm-12 col-xs-12">
+                    <div class="logo-area">
+                        <a href="{% url 'home' %}"><img src="{% static 'img/leakscope.png' %}" /></a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="main-menu-area mg-tb-40">
+       <div class="container">
+            <div class="row">
+                <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
+                    <ul class="nav nav-tabs notika-menu-wrap menu-it-icon-pro">
+                        <li><a href="{% url 'home' %}"><i class="notika-icon notika-house"></i> Home</a></li>
+                        <li><a href="{% url 'keyword' %}"><i class="notika-icon notika-search"></i> Discover</a></li>
+                        <li><a href="{% url 'database' %}"><i class="notika-icon notika-edit"></i> Database</a></li>
+                        <li><a href="{% url 'custom_queries' %}"><i class="notika-icon notika-star"></i> Custom Query</a></li>
+                        <li class="active"><a href="{% url 'preview_page' %}"><i class="notika-icon notika-down-arrow"></i> Preview</a></li>
+                        <li><a href="{% url 'explore_page' %}"><i class="notika-icon notika-eye"></i> Explore</a></li>
+                        <li><a href="{% url 'export_import' %}"><i class="notika-icon notika-support"></i> Export/Import</a></li>
+                    </ul>
+                    <div class="tab-content custom-menu-content">
+                        <div id="Home" class="tab-pane in active notika-tab-menu-bg animated flipInX"></div>
+                        <div id="search" class="tab-pane notika-tab-menu-bg animated flipInX">
+                            <ul class="notika-main-menu-dropdown">
+                        <li><a href="{% url 'keyword' %}">Keyword</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-12 col-md-12 col-sm-12">
+                <div class="alert alert-warning">
+                    Preview performs active probing and will contact the target service. Ensure you have permission.
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-lg-12 col-md-12 col-sm-12">
+                <div class="form-element-list">
+                    <div class="row">
+                        <div class="col-lg-3 col-md-3 col-sm-6">
+                            <label>Type</label>
+                            <select class="form-control" id="preview_type">
+                                <option value="">Select type</option>
+                                {% for t in types %}
+                                <option value="{{ t }}">{{ t }}</option>
+                                {% endfor %}
+                                <option value="amazonbuckets">amazonbuckets</option>
+                            </select>
+                        </div>
+                        <div class="col-lg-6 col-md-6 col-sm-6">
+                            <label>Target</label>
+                            <select class="form-control" id="preview_target">
+                                <option value="">Select a target</option>
+                            </select>
+                        </div>
+                        <div class="col-lg-2 col-md-2 col-sm-6">
+                            <div class="checkbox-nk" style="margin-top:24px;">
+                                <label>
+                                    <input type="checkbox" id="preview_active_probe" checked>
+                                    <i></i> Enable Active Probing
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-lg-1 col-md-1 col-sm-12" style="margin-top:24px;">
+                            <button class="btn btn-info" id="start_preview" disabled>Preview</button>
+                        </div>
+                    </div>
+                    <div class="progress-bar wow" id="pgrbar"  style="width: 0%"> <span></span></div>
+                    <div id="export-panel" style="display:none; margin-top:15px; padding:10px; background:#0f1c34; border:1px solid #243b55;">
+                        <h4>Export data (active probing only)</h4>
+                        <div class="row">
+                            <div class="col-lg-3 col-md-3 col-sm-6">
+                                <label>Index/DB</label>
+                                <input type="text" id="export_index" class="form-control" placeholder="index or db (optional)">
+                            </div>
+                            <div class="col-lg-3 col-md-3 col-sm-6">
+                                <label>Collection (Mongo)</label>
+                                <input type="text" id="export_collection" class="form-control" placeholder="collection (optional)">
+                            </div>
+                            <div class="col-lg-2 col-md-2 col-sm-6">
+                                <label>Max items</label>
+                                <input type="number" id="export_max" class="form-control" value="1000" min="1" max="5000">
+                            </div>
+                            <div class="col-lg-2 col-md-2 col-sm-6">
+                                <label>Format</label>
+                                <select id="export_format" class="form-control">
+                                    <option value="json">JSON</option>
+                                    <option value="csv">CSV</option>
+                                </select>
+                            </div>
+                            <div class="col-lg-2 col-md-2 col-sm-12" style="margin-top:24px;">
+                                <button class="btn btn-success" id="start_export" disabled>Start export</button>
+                            </div>
+                        </div>
+                        <div id="export_status" style="margin-top:10px; color:#e5e7eb;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row" style="margin-top:15px;">
+            <div class="col-lg-12">
+                <div class="table-responsive">
+                    <table class="table table-striped" id="preview_results">
+                        <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>Value</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer style="padding: 20px 0; text-align: center; color: #777; font-size: 14px;">
+        By <a href="https://gainsec.com/" target="_blank" rel="noopener noreferrer">GainSec</a>
+    </footer>
+
+    <script src="{% static 'js/vendor/jquery-1.12.4.min.js' %}"></script>
+    <script src="{% static 'js/bootstrap.min.js' %}"></script>
+    <script src="{% static 'js/wow.min.js' %}"></script>
+    <script src="{% static 'js/meanmenu/jquery.meanmenu.js' %}"></script>
+    <script src="{% static 'js/scrollbar/jquery.mCustomScrollbar.concat.min.js' %}"></script>
+    <script src="{% static 'js/plugins.js' %}"></script>
+    <script src="{% static 'js/data-table/jquery.dataTables.min.js' %}"></script>
+    <script src="{% static 'js/main.js' %}"></script>
+    <script src="{% static 'js/celery_progress.js' %}"></script>
+    <script>
+        function renderSummary(data) {
+            var tbody = $('#preview_results tbody');
+            tbody.empty();
+            if (data.result && data.result.summary) {
+                tbody.append('<tr><td>Summary</td><td>' + data.result.summary + '</td></tr>');
+            }
+            if (data.result && data.result.items) {
+                data.result.items.forEach(function(item, idx) {
+                    tbody.append('<tr><td>Item ' + (idx+1) + '</td><td style="word-break:break-word;">' + JSON.stringify(item) + '</td></tr>');
+                });
+            }
+            if ((!data.result || !data.result.items || data.result.items.length === 0) && data.state === 'SUCCESS') {
+                tbody.append('<tr><td colspan="2">No preview data.</td></tr>');
+            }
+        }
+
+        function showExportPanel(type, targetId) {
+            $('#export-panel').show();
+            $('#start_export').data('type', type).data('target', targetId).prop('disabled', false);
+            $('#export_status').text('');
+        }
+
+        function get_task_info(task_id) {
+            var pgrbar = document.getElementById("pgrbar");
+            $.ajax({
+                type: 'get',
+                url: '/get-task-info/',
+                data: { 'task_id': task_id },
+                success: function(data) {
+                    if (data.state == 'PENDING') {
+                        pgrbar.style['visibility'] = "visible";
+                    } else if (data.state == 'PROGRESS') {
+                        pgrbar.style['width'] = data.percentage + "%";
+                        pgrbar.style['visibility'] = "visible";
+                        pgrbar.textContent = data.percentage + "%";
+                    } else if (data.state == 'SUCCESS') {
+                        pgrbar.style['visibility'] = "hidden";
+                        renderSummary(data);
+                        if (data.result && data.result.type) {
+                            showExportPanel(data.result.type, $('#preview_target').val());
+                        }
+                        return;
+                    }
+                    if (data.state != 'SUCCESS') {
+                        setTimeout(function() { get_task_info(task_id); }, 200);
+                    }
+                }
+            });
+        }
+
+        function poll_export(task_id) {
+            $('#export_status').text('Export in progress...');
+            $.get('/get-task-info/', {task_id: task_id}, function(data){
+                if (data.state === 'SUCCESS' && data.result && data.result.download_token) {
+                    var link = '/export/download/' + data.result.download_token;
+                    $('#export_status').html('Export ready: <a href="'+link+'">download</a>');
+                } else if (data.state === 'FAILURE') {
+                    $('#export_status').text('Export failed: ' + data.result);
+                } else if (data.state === 'SKIPPED' || (data.result && data.result.requires_active)) {
+                    $('#export_status').text('Export skipped; enable active probing.');
+                } else {
+                    setTimeout(function(){ poll_export(task_id); }, 500);
+                }
+            }).fail(function(){
+                setTimeout(function(){ poll_export(task_id); }, 500);
+            });
+        }
+
+        $(document).ready(function() {
+            function populateTargets(val, targetId) {
+                $('#preview_target').empty().append('<option value=\"\">Loading...</option>');
+                $('#start_preview').prop('disabled', true);
+                if (!val) {
+                    $('#preview_target').html('<option value=\"\">Select a target</option>');
+                    return;
+                }
+                $.get('/preview/targets', {type: val}, function(resp) {
+                    var sel = $('#preview_target');
+                    sel.empty().append('<option value=\"\">Select a target</option>');
+                    resp.results.forEach(function(r) {
+                        var opt = $('<option value="'+r.id+'">'+r.label+'</option>');
+                        if (targetId && targetId == r.id) {
+                            opt.attr('selected','selected');
+                        }
+                        sel.append(opt);
+                    });
+                    if (targetId) {
+                        $('#start_preview').prop('disabled', false);
+                    }
+                });
+            }
+
+            $('#preview_type').change(function() {
+                var val = $(this).val();
+                populateTargets(val, null);
+            });
+
+            $('#preview_target').change(function() {
+                $('#start_preview').prop('disabled', $(this).val() === "");
+            });
+
+            $('#start_preview').click(function(e) {
+                e.preventDefault();
+                var type = $('#preview_type').val();
+                var target = $('#preview_target').val();
+                var active = $('#preview_active_probe').is(':checked') ? '1' : '0';
+                if (!type || !target) {
+                    alert('Select type and target first.');
+                    return;
+                }
+                if (active !== '1') {
+                    alert('Active probing must be enabled.');
+                    return;
+                }
+                $("#preview_results tbody").empty();
+                var pgrbar = document.getElementById("pgrbar");
+                pgrbar.style['width'] = '0%';
+                pgrbar.textContent = "";
+                $.get('/preview/start', {type: type, target_id: target, active_probe: active}, function(resp) {
+                    get_task_info(resp.task_id);
+                }).fail(function(resp) {
+                    alert(resp.responseJSON ? resp.responseJSON.error : 'Failed to start preview');
+                });
+            });
+
+            $('#start_export').click(function(e){
+                e.preventDefault();
+                var type = $(this).data('type');
+                var target = $(this).data('target');
+                var active = $('#preview_active_probe').is(':checked') ? '1' : '0';
+                if (active !== '1') {
+                    alert('Enable Active Probing to export.');
+                    return;
+                }
+                var payload = {
+                    type: type,
+                    target_id: target,
+                    index: $('#export_index').val(),
+                    db: $('#export_index').val(),
+                    collection: $('#export_collection').val(),
+                    max_items: $('#export_max').val(),
+                    format: $('#export_format').val(),
+                    active_probe: active
+                };
+                $('#export_status').text('Starting export...');
+                $.get('/export/start', payload, function(resp){
+                    poll_export(resp.task_id);
+                }).fail(function(resp){
+                    $('#export_status').text(resp.responseJSON ? (resp.responseJSON.error || 'Failed to start export') : 'Failed to start export');
+                });
+            });
+            // Preselect from query params
+            (function initFromParams(){
+                var params = new URLSearchParams(window.location.search);
+                var t = params.get("type");
+                var tid = params.get("target_id");
+                if (t) {
+                    t = t.toLowerCase();
+                    $('#preview_type').val(t);
+                    populateTargets(t, tid);
+                }
+            })();
+        });
+    </script>
+</body>
+</html>
+{% endblock %}

@@ -1,0 +1,463 @@
+<!doctype html>
+<html class="no-js" lang="">
+{% load static %}
+{% block page_content %}
+
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>LeakScope by GainSec | Custom Queries</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'css/jquery.dataTables.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/wave/button.css' %}">
+    <link rel="shortcut icon" type="image/x-icon" href="img/favicon.ico">
+    <link href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,700,900" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/font-awesome.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/owl.carousel.css' %}">
+    <link rel="stylesheet" href="{% static 'css/owl.theme.css' %}">
+    <link rel="stylesheet" href="{% static 'css/owl.transitions.css' %}">
+    <link rel="stylesheet" href="{% static 'css/meanmenu/meanmenu.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/dialog/sweetalert2.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/dialog/dialog.css' %}">
+    <link rel="stylesheet" href="{% static 'css/animate.css' %}">
+    <link rel="stylesheet" href="{% static 'css/normalize.css' %}">
+    <link rel="stylesheet" href="{% static 'css/scrollbar/jquery.mCustomScrollbar.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/notika-custom-icon.css' %}">
+    <link rel="stylesheet" href="{% static 'css/wave/waves.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/responsive.css' %}">
+    <script src="{% static 'js/vendor/modernizr-2.8.3.min.js' %}"></script>
+</head>
+
+<body>
+    <div class="header-top-area">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-4 col-md-4 col-sm-12 col-xs-12">
+                    <div class="logo-area">
+                        <a href="{% url 'home' %}"><img src="{% static 'img/leakscope.png' %}" /></a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="main-menu-area mg-tb-40">
+         <div class="container">
+            <div class="row">
+                <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
+                    <ul class="nav nav-tabs notika-menu-wrap menu-it-icon-pro">
+                        <li ><a href="{% url 'home' %}"><i class="notika-icon notika-house"></i> Home</a></li>
+                        <li><a href="{% url 'keyword' %}"><i class="notika-icon notika-search"></i> Discover</a></li>
+                        <li><a href="{% url 'database' %}"><i class="notika-icon notika-edit"></i> Database</a></li>
+                        <li class="active"><a href="{% url 'custom_queries' %}"><i class="notika-icon notika-star"></i> Custom Query</a></li>
+                        <li><a href="{% url 'preview_page' %}"><i class="notika-icon notika-down-arrow"></i> Preview</a></li>
+                        <li><a href="{% url 'explore_page' %}"><i class="notika-icon notika-eye"></i> Explore</a></li>
+                        <li><a href="{% url 'export_import' %}"><i class="notika-icon notika-support"></i> Export/Import</a></li>
+                    </ul>
+                    <div class="tab-content custom-menu-content">
+                        <div id="Home" class="tab-pane in active notika-tab-menu-bg animated flipInX"></div>
+                        <div id="search" class="tab-pane notika-tab-menu-bg animated flipInX">
+                            <ul class="notika-main-menu-dropdown">
+                                <li><a href="{% url 'keyword' %}">Keyword</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-6 col-md-6 col-sm-12">
+                <h3>Create / Edit Custom Query</h3>
+                <div style="margin-bottom:10px; font-size:13px;">
+                    <button class="btn btn-xs btn-default" type="button" id="toggle-filters" title="Filters narrow your search (e.g., port, product, country). Click to browse and insert filter tokens.">Show filters</button>
+                    <button class="btn btn-xs btn-default" type="button" id="toggle-facets" title="Facets summarize and aggregate results (e.g., top ports/services). Click to browse and insert facet tokens.">Show facets</button>
+                    <div id="filters-list" style="display:none; margin-top:6px; max-height:140px; overflow-y:auto;">
+                        {% if filters %}
+                            {% for f in filters %}
+                                <span class="label label-default helper-chip add-filter" data-token="{{ f }}">{{ f }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span>Unavailable</span>
+                        {% endif %}
+                    </div>
+                    <div id="facets-list" style="display:none; margin-top:6px; max-height:140px; overflow-y:auto;">
+                        {% if facets %}
+                            {% for f in facets %}
+                                <span class="label label-default helper-chip add-facet" data-token="{{ f }}">{{ f }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span>Unavailable</span>
+                        {% endif %}
+                    </div>
+                    {% if helper_error %}<div style="color:#c00; margin-top:4px;">Shodan helper lookup failed: {{ helper_error }}</div>{% endif %}
+                </div>
+                <div class="form-element-list">
+                    <input type="hidden" id="query_id">
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input class="form-control" id="query_name" placeholder="Name">
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea class="form-control" id="query_description" rows="2" placeholder="Optional notes"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Query Template</label>
+                        <textarea class="form-control" id="query_template" rows="3" placeholder='Example: product:"MongoDB" port:27017 {network}'></textarea>
+                        <small>Use placeholders: {keyword}, {country}, {network}, {exclude}</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Default Type (optional)</label>
+                        <select class="form-control" id="default_type">
+                            <option value="">(none)</option>
+                            {% for t in types %}
+                            <option value="{{ t }}">{{ t }}</option>
+                            {% endfor %}
+                            <option value="keys">keys</option>
+                            <option value="amazonbuckets">amazonbuckets</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <div class="checkbox-nk">
+                            <label>
+                                <input type="checkbox" id="active_probe_default">
+                                <i></i> Enable Active Probing by default
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <button class="btn btn-success" id="save_query">Save</button>
+                        <button class="btn btn-default" id="reset_form">Reset</button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6 col-md-6 col-sm-12">
+                <h3>Saved Queries</h3>
+                <table class="table table-striped" id="custom-query-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Template</th>
+                            <th>Type</th>
+                            <th>Active Probe</th>
+                            <th>Updated</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <hr>
+        <div class="row">
+            <div class="col-lg-12">
+                <h3>Run Custom Query</h3>
+                <div class="form-element-list">
+                    <div class="row">
+                        <div class="col-lg-3 col-md-3 col-sm-6">
+                            <input class="form-control" id="run_keyword" placeholder="Keyword">
+                        </div>
+                        <div class="col-lg-2 col-md-2 col-sm-6">
+                            <input class="form-control" id="run_country" placeholder="Country">
+                        </div>
+                        <div class="col-lg-3 col-md-3 col-sm-6">
+                            <input class="form-control" id="run_network" placeholder="Network/IP/CIDR">
+                        </div>
+                        <div class="col-lg-3 col-md-3 col-sm-6">
+                            <input class="form-control" id="run_exclude" placeholder="Exclude (comma-separated)">
+                        </div>
+                        <div class="col-lg-1 col-md-1 col-sm-6">
+                            <label for="run_page" style="color:#fff;">Pages</label>
+                            <input class="form-control" id="run_page" type="number" value="1" min="1">
+                        </div>
+                        <div class="col-lg-1 col-md-1 col-sm-6">
+                            <div class="checkbox-nk" style="margin-top:8px;">
+                                <label>
+                                    <input type="checkbox" id="run_active_probe">
+                                    <i></i> Enable Active Probing
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="custom-shodan-credit" style="display:none; margin-top:10px; color:#fbbf24; font-weight:bold;">
+                        Shodan API Credits Used: <span id="custom-shodan-credit-count">1</span>
+                    </div>
+                    <div class="form-group" style="margin-top:10px;">
+                        <button class="btn btn-info" id="run_query_btn" disabled>Run</button>
+                        <span id="run_selected_label" style="margin-left:10px;color:#777;">Select a saved query to run.</span>
+                    </div>
+                    <div class="progress-bar wow" id="pgrbar"  style="width: 0%"> <span></span></div>
+                </div>
+                <div class="table-responsive">
+                    <table id="custom-results" class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>IP</th>
+                                <th>Port</th>
+                                <th>Status</th>
+                                <th>Additional</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer style="padding: 20px 0; text-align: center; color: #777; font-size: 14px;">
+        By <a href="https://gainsec.com/" target="_blank" rel="noopener noreferrer">GainSec</a>
+    </footer>
+
+    <script src="{% static 'js/vendor/jquery-1.12.4.min.js' %}"></script>
+    <script src="{% static 'js/bootstrap.min.js' %}"></script>
+    <script src="{% static 'js/wow.min.js' %}"></script>
+    <script src="{% static 'js/meanmenu/jquery.meanmenu.js' %}"></script>
+    <script src="{% static 'js/scrollbar/jquery.mCustomScrollbar.concat.min.js' %}"></script>
+    <script src="{% static 'js/plugins.js' %}"></script>
+    <script src="{% static 'js/data-table/jquery.dataTables.min.js' %}"></script>
+    <script src="{% static 'js/main.js' %}"></script>
+    <script src="{% static 'js/celery_progress.js' %}"></script>
+    <script>
+        var baseQueries = {};
+        try {
+            baseQueries = JSON.parse('{{ base_queries_json|escapejs }}');
+        } catch (e) {
+            baseQueries = {};
+        }
+        var selectedQuery = null;
+        function addTokenToTemplate(token) {
+            var textarea = $('#query_template');
+            var current = textarea.val();
+            var insert = (current && !current.endsWith(' ')) ? ' ' : '';
+            insert += token + ':REPLACEME';
+            textarea.val(current + insert);
+        }
+
+        function resetForm() {
+            $('#query_id').val('');
+            $('#query_name').val('');
+            $('#query_description').val('');
+            $('#query_template').val('');
+            $('#default_type').val('');
+            $('#active_probe_default').prop('checked', false);
+        }
+
+        function loadQueries() {
+            $.get('/custom-queries/list', function(resp) {
+                var tbody = $('#custom-query-table tbody');
+                tbody.empty();
+                resp.results.forEach(function(q) {
+                    var row = $('<tr>');
+                    row.append('<td>' + q.name + '</td>');
+                    row.append('<td style="word-break:break-word;">' + q.query_template + '</td>');
+                    row.append('<td>' + (q.default_type || '') + '</td>');
+                    row.append('<td>' + (q.active_probe_default ? 'Yes' : 'No') + '</td>');
+                    row.append('<td>' + (q.updated_on ? q.updated_on.replace("T"," ").split(".")[0] : '') + '</td>');
+                    var actions = $('<td>');
+                    actions.append('<button class="btn btn-xs btn-primary run-query" data-id="'+q.id+'">Run</button> ');
+                    actions.append('<button class="btn btn-xs btn-default edit-query" data-id="'+q.id+'">Edit</button> ');
+                    actions.append('<button class="btn btn-xs btn-danger delete-query" data-id="'+q.id+'">Delete</button>');
+                    actions.append('<div style="font-size:11px;color:#777;">Last: '+ (q.last_status || '') +'</div>');
+                    row.append(actions);
+                    row.data('query', q);
+                    tbody.append(row);
+                });
+            });
+        }
+
+        function renderResults(data) {
+            var tbody = $('#custom-results tbody');
+            tbody.empty();
+            if (!data.result || !data.result.results) {
+                return;
+            }
+            Object.keys(data.result.results).forEach(function(key) {
+                var payload = data.result.results[key];
+                Object.keys(payload).forEach(function(inner) {
+                    var entry = payload[inner];
+                    var type = data.result.type || 'custom';
+                    var ip = entry.ip || '';
+                    var port = entry.port || '';
+                    var status = entry.status || '';
+                    var additional = '';
+                    if (entry.url) additional += entry.url + '<br>';
+                    if (entry.files) additional += entry.files + '<br>';
+                    if (entry.indices) additional += entry.indices + '<br>';
+                    if (entry.snippet) additional += entry.snippet + '<br>';
+                    if (!additional) {
+                        additional = JSON.stringify(entry);
+                    }
+                    tbody.append('<tr><td>'+type+'</td><td>'+ip+'</td><td>'+port+'</td><td>'+status+'</td><td style="word-break:break-word;">'+additional+'</td></tr>');
+                });
+            });
+        }
+
+        function get_task_info(task_id) {
+            var pgrbar = document.getElementById("pgrbar");
+            $.ajax({
+                type: 'get',
+                url: '/get-task-info/',
+                data: { 'task_id': task_id },
+                success: function(data) {
+                    if (data.state == 'PENDING') {
+                        pgrbar.style['visibility'] = "visible";
+                    } else if (data.state == 'PROGRESS') {
+                        pgrbar.style['width'] = data.percentage + "%";
+                        pgrbar.style['visibility'] = "visible";
+                        pgrbar.textContent = data.percentage + "%";
+                    } else if (data.state == 'SUCCESS') {
+                        pgrbar.style['visibility'] = "hidden";
+                        renderResults(data);
+                        return;
+                    }
+                    if (data.state != 'SUCCESS') {
+                        setTimeout(function() { get_task_info(task_id); }, 200);
+                    }
+                }
+            });
+        }
+
+        function refreshCustomCredits() {
+            var pages = parseInt($('#run_page').val(), 10);
+            if (isNaN(pages) || pages < 1) {
+                pages = 1;
+                $('#run_page').val(1);
+            }
+            if (pages > 1) {
+                $('#custom-shodan-credit-count').text(pages);
+                $('#custom-shodan-credit').show();
+            } else {
+                $('#custom-shodan-credit').hide();
+            }
+        }
+
+        $(document).ready(function() {
+            loadQueries();
+            refreshCustomCredits();
+
+            $('#toggle-filters').click(function() {
+                $('#filters-list').toggle();
+                $(this).text($('#filters-list').is(':visible') ? 'Hide filters' : 'Show filters');
+            });
+            $('#toggle-facets').click(function() {
+                $('#facets-list').toggle();
+                $(this).text($('#facets-list').is(':visible') ? 'Hide facets' : 'Show facets');
+            });
+            $('#filters-list').on('click', '.add-filter', function() {
+                var token = $(this).data('token');
+                addTokenToTemplate(token);
+            });
+            $('#facets-list').on('click', '.add-facet', function() {
+                var token = $(this).data('token');
+                addTokenToTemplate('facet:' + token);
+            });
+
+            $('#save_query').click(function(e) {
+                e.preventDefault();
+                var payload = {
+                    id: $('#query_id').val(),
+                    name: $('#query_name').val(),
+                    description: $('#query_description').val(),
+                    query_template: $('#query_template').val(),
+                    default_type: $('#default_type').val(),
+                    active_probe_default: $('#active_probe_default').is(':checked') ? '1' : '0'
+                };
+                $.get('/custom-queries/save', payload, function() {
+                    resetForm();
+                    loadQueries();
+                }).fail(function(resp) {
+                    alert(resp.responseJSON ? resp.responseJSON.error : 'Failed to save');
+                });
+            });
+
+            $('#reset_form').click(function(e) {
+                e.preventDefault();
+                resetForm();
+            });
+
+            $('#custom-query-table').on('click', '.edit-query', function() {
+                var row = $(this).closest('tr').data('query');
+                if (!row) return;
+                $('#query_id').val(row.id);
+                $('#query_name').val(row.name);
+                $('#query_description').val(row.description);
+                $('#query_template').val(row.query_template);
+                $('#default_type').val(row.default_type);
+                $('#active_probe_default').prop('checked', row.active_probe_default);
+            });
+
+            $('#custom-query-table').on('click', '.delete-query', function() {
+                var id = $(this).data('id');
+                if (!confirm('Delete this custom query?')) return;
+                $.get('/custom-queries/delete', {id: id}, function() {
+                    if (selectedQuery && selectedQuery.id == id) {
+                        selectedQuery = null;
+                        $('#run_query_btn').prop('disabled', true);
+                        $('#run_selected_label').text('Select a saved query to run.');
+                    }
+                    loadQueries();
+                });
+            });
+
+            $('#custom-query-table').on('click', '.run-query', function() {
+                var row = $(this).closest('tr').data('query');
+                selectedQuery = row;
+                $('#run_selected_label').text('Running: ' + row.name);
+                $('#run_active_probe').prop('checked', row.active_probe_default);
+                $('#run_query_btn').prop('disabled', false);
+                refreshCustomCredits();
+            });
+
+            $('#default_type').change(function() {
+                var val = $(this).val();
+                var base = (val && baseQueries[val]) ? baseQueries[val] : '';
+                $('#query_template').val(base ? base : '');
+            });
+
+            $('#run_query_btn').click(function(e) {
+                e.preventDefault();
+                if (!selectedQuery) {
+                    alert('Select a query first.');
+                    return;
+                }
+                var pageVal = parseInt($('#run_page').val(), 10);
+                if (isNaN(pageVal) || pageVal < 1) {
+                    pageVal = 1;
+                    $('#run_page').val(1);
+                }
+                $("#custom-results tbody").empty();
+                var payload = {
+                    id: selectedQuery.id,
+                    keyword: $('#run_keyword').val(),
+                    country: $('#run_country').val(),
+                    network: $('#run_network').val(),
+                    exclude: $('#run_exclude').val(),
+                    page: pageVal,
+                    active_probe: $('#run_active_probe').is(':checked') ? '1' : '0'
+                };
+                refreshCustomCredits();
+                var pgrbar = document.getElementById("pgrbar");
+                pgrbar.style['width'] = '0%';
+                pgrbar.textContent = "";
+                $.get('/custom-queries/run', payload, function(resp) {
+                    get_task_info(resp.task_id);
+                }).fail(function(resp) {
+                    alert(resp.responseJSON ? resp.responseJSON.error : 'Failed to start');
+                });
+            });
+            $('#run_page').on('input change', refreshCustomCredits);
+        });
+    </script>
+</body>
+</html>
+{% endblock %}

@@ -1,0 +1,824 @@
+
+<!doctype html>
+<html class="no-js" lang="">
+{% load static %}
+{% block page_content %}
+
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>LeakScope by GainSec | Dashboard</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+            <link rel="stylesheet" href="{% static 'css/jquery.dataTables.min.css' %}">
+
+        <link rel="stylesheet" href="{% static 'css/wave/button.css' %}">
+    <!-- favicon
+		============================================ -->
+    <link rel="shortcut icon" type="image/x-icon" href="img/favicon.ico">
+    <!-- Google Fonts
+		============================================ -->
+    <link href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,700,900" rel="stylesheet">
+    <!-- Bootstrap CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+    <!-- Bootstrap CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/font-awesome.min.css' %}">
+    <!-- owl.carousel CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/owl.carousel.css' %}">
+    <link rel="stylesheet" href="{% static 'css/owl.theme.css' %}">
+    <link rel="stylesheet" href="{% static 'css/owl.transitions.css' %}">
+    <!-- meanmenu CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/meanmenu/meanmenu.min.css' %}">
+    <!-- animate CSS
+		============================================ -->
+
+    <link rel="stylesheet" href="{% static 'css/dialog/sweetalert2.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/dialog/dialog.css' %}">
+
+    <link rel="stylesheet" href="{% static 'css/animate.css' %}">
+    <!-- normalize CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/normalize.css' %}">
+    <!-- mCustomScrollbar CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/scrollbar/jquery.mCustomScrollbar.min.css' %}">
+    <!-- jvectormap CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/jvectormap/jquery-jvectormap-2.0.3.css' %}">
+    <!-- notika icon CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/notika-custom-icon.css' %}">
+    <!-- wave CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/wave/waves.min.css' %}">
+    <!-- main CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    <!-- style CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <!-- responsive CSS
+		============================================ -->
+    <link rel="stylesheet" href="{% static 'css/responsive.css' %}">
+    <!-- modernizr JS
+		============================================ -->
+    <script src="{% static 'js/vendor/modernizr-2.8.3.min.js' %}"></script>
+</head>
+
+<body>
+    <!--[if lt IE 8]>
+            <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="http://browsehappy.com/">upgrade your browser</a> to improve your experience.</p>
+        <![endif]-->
+    <!-- Start Header Top Area -->
+    <div class="header-top-area">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-4 col-md-4 col-sm-12 col-xs-12">
+                    <div class="logo-area">
+                        <a href="{% url 'home' %}"><img src="{% static 'img/leakscope.png' %}" /></a>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    .results {
+    display: flex;
+justify-content: center;
+align-items: center;
+}
+.results p {
+padding: 5px;
+}
+
+
+</style>
+    <!-- End Header Top Area -->
+    <!-- Mobile Menu start -->
+
+    <!-- Mobile Menu end -->
+    <!-- Main Menu area start-->
+    <div class="main-menu-area mg-tb-40">
+         <div class="container">
+            <div class="row">
+                <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
+                    <ul class="nav nav-tabs notika-menu-wrap menu-it-icon-pro">
+                        <li ><a href="{% url 'home' %}"><i class="notika-icon notika-house"></i> Home</a>
+                        </li>
+                        <li class="active"><a href="{% url 'keyword' %}"><i class="notika-icon notika-search"></i> Discover</a></li>
+                        <li><a href="{% url 'database' %}"><i class="notika-icon notika-edit"></i> Database</a>
+                        </li>
+                        <li><a href="{% url 'custom_queries' %}"><i class="notika-icon notika-star"></i> Custom Query</a>
+                        </li>
+                        <li><a href="{% url 'preview_page' %}"><i class="notika-icon notika-down-arrow"></i> Preview</a>
+                        </li>
+                        <li><a href="{% url 'explore_page' %}"><i class="notika-icon notika-eye"></i> Explore</a>
+                        </li>
+                        <li><a href="{% url 'export_import' %}"><i class="notika-icon notika-support"></i> Export/Import</a>
+                        </li>
+                    </ul>
+                    <div class="tab-content custom-menu-content">
+                        <div id="Home" class="tab-pane in active notika-tab-menu-bg animated flipInX">
+
+                        </div>
+                        <div id="search" class="tab-pane notika-tab-menu-bg animated flipInX">
+                            <ul class="notika-main-menu-dropdown">
+                                <li><a href="{% url 'keyword' %}">Keyword</a>
+                                </li>
+                            </ul>
+                        </div>
+
+
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Main Menu area End-->
+	<!-- Breadcomb area Start-->
+
+	<!-- Breadcomb area End-->
+    <div class="container">
+        <div class="row">
+                <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
+                    <div class="form-element-list">
+                        <div class="row">
+                            <form id="gitlab_form">
+                            <div class="col-lg-3 col-md-3 col-sm-3 col-xs-12">
+                                <div class="form-group">
+                                    <div class="nk-int-st">
+                                        <input class="form-control" id='keyword' placeholder="Keyword" type="text">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-3 col-sm-3 col-xs-12">
+                                <div class="form-group">
+                                    <div class="nk-int-st">
+                                        <input class="form-control" id='exclude' placeholder="Exclude (comma-separated)" type="text">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-3 col-sm-3 col-xs-12">
+                                <div class="form-group">
+                                    <div class="nk-int-st">
+                                        <input class="form-control" id='country' placeholder="Country" type="text">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-3 col-sm-3 col-xs-12">
+                                <div class="form-group">
+                                    <div class="nk-int-st">
+                                        <input class="form-control" id='network' placeholder="Network" type="text">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-3 col-sm-3 col-xs-12">
+                                <div class="form-group">
+                                    <label for="page" style="color:#fff;">Pages</label>
+                                    <div class="nk-int-st">
+                                        <input class="form-control" id='page' placeholder="1" type="number" min="1" value="1">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
+                                <div class="form-group">
+                                    <div class="checkbox-nk">
+                                        <label>
+                                            <input type="checkbox" id="active_probe">
+                                            <i></i> Enable Active Probing (directly contact hosts; default off)
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                                <center>Type</center>
+                                <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
+                                    <div id="type-buttons" style="display:flex; flex-wrap:wrap; gap:6px;">
+                                        {% comment %} Toggle buttons for types {% endcomment %}
+                                        <button type="button" class="btn btn-xs btn-default type-btn active" data-value="gitlab">Gitlab</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="nexus">Nexus</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="artifactory">Artifactory</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="registry">Docker Registry</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="harbor">Harbor</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="dockerapi">docker-distribution-api</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="jenkins">Jenkins</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="elastic">Elastic</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="kibana">Kibana</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="mongo">MongoDB</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="couchdb">CouchDB</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="rethink">RethinkDB</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="cassandra">Cassandra</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="dirs">Dirs</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="ftp">FTP</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="sonarqube">SonarQube</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="rsync">Rsync</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="amazons3be">AmazonS3BE</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="angular">Angular</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="opensearch">OpenSearch</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="grafana">Grafana</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="prometheus">Prometheus</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="minio">MinIO</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="swagger">Swagger/OpenAPI</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="mongoexpress">Mongo Express</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="github">GitHub</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="keys">Keys</button>
+                                    </div>
+                                </div>
+<br>
+                        <div id="shodan-credit-banner" style="display:none; text-align:center; margin-bottom: 8px; color:#fbbf24; font-weight:bold;">
+                            Shodan API Credits Used: <span id="shodan-credit-count">1</span>
+                        </div>
+                        <center><button id='submit' style="margin-top: 20px;"class="btn-lg btn-success notika-btn-success waves-effect">Search</button></center>
+                                <br>
+
+                                     <div class="progress-bar wow" id="pgrbar"  style="width: 0%"> <span></span>
+                                                </div>
+                                            </form>
+
+                        </div>
+                <div class="results">
+                        <p id="gitlab"></p>
+                                                    <p id="ftp"></p>
+
+                                <p id="jenkins"></p>
+                            <p id="elastic"></p>
+                                <p id="couchdb"></p>
+                        <p id="kibana"></p>
+                                <p id="rethink"></p>
+                            <p id="dirs"></p>
+                                <p id="mongo"></p>
+                                <p id="cassandra"></p>
+                            <p id="rsync"></p>
+                                <p id="sonarqube"></p>
+                                                    <p id="angular"></p>
+                                                                        <p id="amazons3be"></p>
+
+
+                    </div>
+<div class="table-responsive">
+    <table id="bsc-tbl-st" class="table table-striped">
+        <thead>
+        <tr>
+            <th>Type</th>
+            <th>IP</th>
+            <th>Port</th>
+            <th>Status</th>
+            <th>Additional</th>
+        </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+</div>
+                    </div>
+                </div>
+            </div></div>
+    <!-- Start Footer area-->
+    <div class="footer-copyright-area">
+
+    </div>
+    <!-- End Footer area-->
+    <!-- jquery
+
+		============================================ -->
+
+
+
+
+<script src="{% static 'js/vendor/jquery-1.12.4.min.js' %}"></script>
+    <!-- bootstrap JS
+		============================================ -->
+    <script src="{% static 'js/bootstrap.min.js' %}"></script>
+    <!-- wow JS
+		============================================ -->
+    <script src="{% static 'js/wow.min.js' %}"></script>
+    <!-- price-slider JS
+		============================================ -->
+    <script src="{% static 'js/jquery-price-slider.js' %}"></script>
+    <!-- owl.carousel JS
+		============================================ -->
+    <script src="{% static 'js/owl.carousel.min.js' %}"></script>
+    <!-- scrollUp JS
+		============================================ -->
+    <script src="{% static 'js/jquery.scrollUp.min.js' %}"></script>
+    <!-- meanmenu JS
+		============================================ -->
+    <script src="{% static 'js/meanmenu/jquery.meanmenu.js' %}"></script>
+    <!-- counterup JS
+		============================================ -->
+    <script src="{% static 'js/counterup/jquery.counterup.min.js' %}"></script>
+    <script src="{% static 'js/counterup/waypoints.min.js' %}"></script>
+    <script src="{% static 'js/counterup/counterup-active.js' %}"></script>
+    <!-- mCustomScrollbar JS
+		============================================ -->
+    <script src="{% static 'js/scrollbar/jquery.mCustomScrollbar.concat.min.js' %}"></script>
+    <!-- sparkline JS
+		============================================ -->
+    <script src="{% static 'js/sparkline/jquery.sparkline.min.js' %}"></script>
+    <script src="{% static 'js/sparkline/sparkline-active.js' %}"></script>
+
+    <!-- flot JS
+		============================================ -->
+    <script src="{% static 'js/flot/jquery.flot.js' %}"></script>
+    <script src="{% static 'js/flot/jquery.flot.resize.js' %}"></script>
+    <script src="{% static 'js/flot/flot-active.js' %}"></script>
+    <!-- knob JS
+		============================================ -->
+    <script src="{% static 'js/knob/jquery.knob.js' %}"></script>
+    <script src="{% static 'js/knob/jquery.appear.js' %}"></script>
+    <script src="{% static 'js/knob/knob-active.js' %}"></script>
+    <!--  Chat JS
+		============================================ -->
+    <script src="{% static 'js/chat/jquery.chat.js' %}"></script>
+    <!--  todo JS
+		============================================ -->
+    <script src="{% static 'js/todo/jquery.todo.js' %}"></script>
+	<!--  wave JS
+		============================================ -->
+    <script src="{% static 'js/wave/waves.min.js' %}"></script>
+    <script src="{% static 'js/wave/wave-active.js' %}"></script>
+    <!-- plugins JS
+		============================================ -->
+    <script src="{% static 'js/plugins.js' %}"></script>
+    <!-- Data Table JS
+		============================================ -->
+    <script src="{% static 'js/data-table/jquery.dataTables.min.js' %}"></script>
+    <script src="{% static 'js/data-table/data-table-act.js' %}"></script>
+    <!-- main JS
+		============================================ -->
+    <script src="{% static 'js/main.js' %}"></script>
+        <script src="{% static 'js/bundle.min.js' %}"></script>
+
+    <script src="{% static 'js/dialog/sweetalert2.min.js' %}"></script>
+<script src="{% static 'js/dialog/dialog-active.js' %}"></script>
+    <script src="{% static 'js/multi-select2.js' %}"></script>
+    <script>
+// Estimate credits based on selected pages and types.
+function refreshShodanCredits() {
+    var pages = parseInt($('#page').val(), 10);
+    if (isNaN(pages) || pages < 1) {
+        pages = 1;
+        $('#page').val(1);
+    }
+    var typeCount = $('.type-btn.active').length;
+    var credits = pages * (typeCount || 1);
+    if (pages > 1) {
+        $('#shodan-credit-count').text(credits);
+        $('#shodan-credit-banner').show();
+    } else {
+        $('#shodan-credit-banner').hide();
+    }
+}
+
+// Toggle type buttons
+$(function(){
+    $('.type-btn').on('click', function(){
+        $(this).toggleClass('active btn-primary');
+        refreshShodanCredits();
+    });
+    $('#page').on('input change', refreshShodanCredits);
+});
+</script>
+
+
+<script>
+
+  var autocomplete = new MultiSelect2(".autocomplete-select", {
+      options: [
+        {
+          label: "Gitlab",
+          value: "gitlab"
+        },
+        {
+          label: "Jenkins",
+          value: "jenkins"
+        },
+        {
+          label: "CouchDB",
+          value: "couchdb"
+        },
+        {
+          label: "Kibana",
+          value: "kibana"
+        },
+        {
+          label: "Mongo",
+          value: "mongo"
+        },
+        {
+          label: "Dirs",
+          value: "dirs"
+        },
+        {
+          label: "FTP",
+          value: "ftp"
+        },
+        {
+          label: "Elastic",
+          value: "elastic"
+        },
+        {
+          label: "SonarQube",
+          value: "sonarqube"
+        },
+        {
+          label: "Angular",
+          value: "angular"
+        },
+        {
+          label: "AmazonS3BE",
+          value: "amazons3be"
+        },
+        {
+          label: "Rsync",
+          value: "rsync"
+        },
+        {
+          label: "Ftp",
+          value: "ftp"
+        },
+                {
+          label: "Cassandra",
+          value: "cassandra"
+        },
+                {
+          label: "Rethink",
+          value: "rethink"
+        },
+        {
+          label: "OpenSearch",
+          value: "opensearch"
+        },
+        {
+          label: "Grafana",
+          value: "grafana"
+        },
+        {
+          label: "Prometheus",
+          value: "prometheus"
+        },
+        {
+          label: "MinIO",
+          value: "minio"
+        },
+        {
+          label: "Swagger/OpenAPI",
+          value: "swagger"
+        },
+        {
+          label: "Mongo Express",
+          value: "mongoexpress"
+        },
+      ],
+      value: [],
+      multiple: true,
+      autocomplete: true,
+      icon: "fa fa-times",
+      onChange: value => {
+},
+  });
+</script>
+    <style>
+    body {
+        font-family: "Roboto", sans-serif;
+    }
+
+    .multi-select__select {
+        align-items: center;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+        box-sizing: border-box;
+        cursor: pointer;
+        display: flex;
+        font-size: 16px;
+        font-weight: 500;
+        justify-content: left;
+        min-height: 44px;
+        padding: 5px 10px;
+        position: relative;
+        transition: 0.2s;
+        width: 100%;
+        height: 50px;
+        border-radius: 6px;
+        border: none;
+        border: 1px solid #aaaaaa;
+        background: transparent;
+        color: #aaaaaa;
+
+    }
+
+    .multi-select__autocomplete::placeholder {
+        color: red;
+    }
+
+    .multi-select__options {
+        border-radius: 4px;
+        border: 1px solid rgba(0, 0, 0, 0.15);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+        box-sizing: border-box;
+        color: #363b3e;
+        display: none;
+        left: 0;
+        max-height: 221px;
+        position: absolute;
+        top: 50px;
+        width: 100%;
+        z-index: 5;
+        overflow-y: scroll;
+    }
+
+    .multi-select__option:hover {
+        background-color: #e9e9e9;
+    }
+
+    .multi-select__select--opened .multi-select__options {
+        display: block;
+    }
+
+    .multi-select__option {
+        background: #fff;
+        border-bottom: 1px solid #e4e4e4;
+        box-sizing: border-box;
+        height: 44px;
+        line-height: 25px;
+        padding: 10px;
+    }
+
+    .multi-select__option-active {
+        background-color: #59d9d4 !important;
+        color: #ffffff;
+    }
+
+    .multi-select__option--selected {
+        color: #e4e4e4;
+        cursor: initial;
+        pointer-events: none;
+    }
+
+    .multi-select__option--hidden {
+        display: none;
+    }
+
+    .multi-select__selected-label {
+        background: #58d8d3;
+        border-radius: 4px;
+        color: #fff;
+        cursor: initial;
+        display: inline-block;
+        margin: 5px;
+        padding: 3px 7px;
+        font-size: 12px;
+    }
+
+    .multi-select__selected-label:last-of-type {
+        margin-right: 0;
+    }
+
+    .multi-select__selected-label i {
+        cursor: pointer;
+        display: inline-block;
+        margin-left: 7px;
+    }
+
+    .multi-select__selected-label i:hover {
+        color: #e4e4e4;
+    }
+
+    .multi-select__autocomplete {
+        background: #f9f9f8;
+        border-bottom: 1px solid #e4e4e4;
+        border-left: none;
+        border-right: none;
+        border-top: none;
+        box-sizing: border-box;
+        font-size: 16px;
+        outline: none;
+        padding: 10px;
+        width: 100%;
+    }
+</style>
+    <script>
+$('#submit').click(function(event){
+var a = document.querySelectorAll('.results p');
+    $("#bsc-tbl-st td").remove();
+
+for(let i = 0; i < a.length; i++) {
+    a[i].innerHTML = "";
+    }
+
+        pgrbar = document.getElementById("pgrbar");
+        pgrbar.style['width'] = '0%';
+        pgrbar.textContent = "";
+         var pageVal = parseInt($('#page').val(), 10);
+         if (isNaN(pageVal) || pageVal < 1) {
+            pageVal = 1;
+            $('#page').val(1);
+         }
+         var types = [];
+         $('.type-btn.active').each(function(){
+            types.push($(this).data('value'));
+         });
+         refreshShodanCredits();
+         event.preventDefault();
+         for (var j = 0; j < types.length; j++) {
+            new_type = types[j];
+         dataString = 'country=' + $('input[id=country]').val() +
+                     '&keyword=' + $('input[id=keyword]').val() + '&exclude=' + $('input[id=exclude]').val() + '&network=' + $('input[id=network]').val() +
+                     '&type=' + types[j] + '&active_probe=' + ($('#active_probe').is(':checked') ? '1' : '0') +
+                     '&page=' + pageVal;
+         const urlParams = new URLSearchParams(dataString);
+         var param = urlParams.get('type');
+
+         $.ajax({
+         url: "/keyword/search",
+         type: 'GET',
+         dataType: 'json',
+         data: dataString,
+         success:  function(response) {
+         get_task_info(response.task_id);
+}
+}
+)
+}
+          }
+)
+</script>
+
+<script>
+function get_task_info(task_id) {
+    pgrbar = document.getElementById("pgrbar");
+
+
+    var empty = 0;
+    $.ajax({
+            type: 'get',
+            url: '/get-task-info/',
+            data: {
+                'task_id': task_id
+            },
+            success: function(data) {
+
+                if (data.state == 'PENDING') {
+                    pgrbar.style['visibility'] = "visible";
+
+                } else if (data.state == 'PROGRESS') {
+                    pgrbar.style['width'] = data.percentage + "%";
+                    pgrbar.style['visibility'] = "visible";
+                    pgrbar.textContent = data.percentage + "%";
+
+
+
+                } else if (data.state == 'SUCCESS') {
+
+                    pgrbar.style['visibility'] = "hidden";
+                    // Reset table for fresh results
+                    $('#bsc-tbl-st tbody').empty();
+
+                    var headerEl = document.getElementById(data.result.type);
+                    if (headerEl){
+                        headerEl.innerHTML = "<h1>" + data.result.type + "</h1>" + "<h2><center>" + data.result.events + "</center></h2>";
+                    }
+                    for (var key in data.result.results) {
+
+                        if (Object.keys(data.result.results[key]).length === 0) {
+                            empty = empty + 1
+
+                        }
+
+
+                        try
+                         {
+                            var status = data.result.results[key][key]['status'] || '';
+                            if (data.result.type == "gitlab") {
+                                $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>" + data.result.results[key][key]['ip'] + "</td><td>" + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>");
+                            } if (data.result.type == "dirs") {
+                            var text = "";
+        for (var i = 0; i < data.result.results[key][key]['dirs'].length; i++) {
+            text += data.result.results[key][key]['dirs'][i] + "<br>";
+            }
+                            $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>" + data.result.results[key][key]['ip'] + "</td><td>"  + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>" + data.result.results[key][key]['url'] + "<br>" + text + "</td><td>");
+                           }if (data.result.type == "jenkins"){
+              $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>"   + data.result.results[key][key]['ip'] + "</td><td>"  + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>" + data.result.results[key][key]['url'] + "<br>" + data.result.results[key][key]['jobs'] + "</td><td>");
+                }
+                if (data.result.type == "mongo"){
+                var text = "";
+        for (var i = 0; i < data.result.results[key][key]['databases'].length; i++) {
+            text += data.result.results[key][key]['databases'][i] + "<br>";
+            }
+                $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>"   + data.result.results[key][key]['ip'] + "</td><td>"  + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>" + data.result.results[key][key]['size'] + " bytes <br>" + text + "</td><td>");
+                }
+                if (data.result.type == "rsync"){
+              $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>"   + data.result.results[key][key]['ip'] + "</td><td>"  + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>" + data.result.results[key][key]['shares'] + "</td><td>");
+                }
+                if (data.result.type == "ftp"){
+              $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>"   + data.result.results[key][key]['ip'] + "</td><td>"  + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>" + data.result.results[key][key]['files'] + "</td><td>");
+                }
+                if (data.result.type == "sonarqube"){
+              $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>"   + data.result.results[key][key]['ip'] + "</td><td>"  + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>" + data.result.results[key][key]['url'] + "</td><td>");
+            }
+            if (data.result.type == "angular") {
+
+                                $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>" + data.result.results[key][key]['ip'] + "</td><td>" + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>" + data.result.results[key][key]['title'] + "</td><td>" + data.result.results[key][key]['path'] + "</td><td>");
+                            }
+            if (data.result.type == "couchdb") {
+                  $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>"   + data.result.results[key][key]['ip'] + "</td><td>"  + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td></td><td>");
+            }
+            if (data.result.type == "kibana") {
+              $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>"   + data.result.results[key][key]['ip'] + "</td><td>"  + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td></td><td>");
+
+            }
+            if (data.result.type == "amazons3be") {
+            var text = "";
+            for (var i = 0; i < data.result.results[key][key]['files'].length; i++) {
+            if (data.result.results[key][key]['files'][i]){
+                text += data.result.results[key][key]['files'][i] + "<br>";
+            }
+       $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>" + data.result.results[key][key]['ip'] + "</td><td>" + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>" + text + "</td><td>");
+
+
+                            }
+        }
+            if (data.result.type == "cassandra"){
+            var text = "";
+        for (var i = 0; i < data.result.results[key][key]['keyspaces'].length; i++) {
+            text += data.result.results[key][key]['keyspaces'][i] + "<br>";
+        }
+
+              $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>"   + data.result.results[key][key]['ip'] + "</td><td>"  + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>" + text + "</td><td>");
+            }
+            if (data.result.type == "rethink"){
+var text = "";
+        for (var i = 0; i < data.result.results[key][key]['databases'].length; i++) {
+            text += data.result.results[key][key]['databases'][i] + "<br>";
+        }
+              $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>"  + data.result.results[key][key]['ip'] + "</td><td>"  + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>" + text + "</td><td>");
+         }
+
+                            if (data.result.type == "elastic") {
+
+                                var text = "";
+        for (var i = 0; i < data.result.results[key][key]['indice'].length; i++) {
+            text += data.result.results[key][key]['indice'][i] + "<br>";
+        }
+                                $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>" + data.result.results[key][key]['ip'] + "</td><td>" + data.result.results[key][key]['port'] + "</td><td>" + status + "</td><td>" + data.result.results[key][key]['name'] + "<br>" + data.result.results[key][key]['size'] + "<br>" + text + "</td><td>");
+                            }
+                            else {
+                                try {
+                                    var generic = data.result.results[key][key];
+                                    if (generic) {
+                                        var ipg = generic['ip'] || '';
+                                        var portg = generic['port'] || '';
+                                        var detail = '';
+                                        if (generic['url']) detail += generic['url'] + '<br>';
+                                        if (generic['title']) detail += generic['title'] + '<br>';
+                                        if (generic['version']) detail += 'version: ' + generic['version'] + '<br>';
+                                        $('#bsc-tbl-st tbody').append("<tr><td>" + data.result.type + "</td><td>" + ipg + "</td><td>" + portg + "</td><td>" + status + "</td><td>" + (detail || JSON.stringify(generic)) + "</td><td>");
+                                    }
+                                } catch (err2) {
+                                    // ignore generic render errors
+                                }
+                            }
+                            }
+
+                        catch (err) {
+                        }
+
+                        if (empty == Object.keys(data.result.results).length) {
+                            swal("Awesome", "Your results for " + data.result.type + " are up to date. Check your database", "success");
+                        }
+
+                    }
+                    }
+                    if (data.state != 'SUCCESS') {
+                        setTimeout(function() {
+                            get_task_info(task_id)
+                        }, 100);
+
+
+
+
+                    }
+                },
+                error: function(data) {
+
+                 }
+            })
+    };
+</script>
+
+
+
+    <footer style="padding: 20px 0; text-align: center; color: #777; font-size: 14px;">
+        By <a href="https://gainsec.com/" target="_blank" rel="noopener noreferrer">GainSec</a>
+    </footer>
+
+</body>
+
+</html>
+{% endblock %}

@@ -1,0 +1,42 @@
+<!doctype html>
+<html class="no-js" lang="">
+{% load static %}
+{% block page_content %}
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>LeakScope by GainSec | Landing</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+</head>
+<body style="background:#0f172a; color:#e5e7eb; text-align:center; padding:40px;">
+    <div class="container">
+        <h1 style="font-size:48px; font-weight:700; margin-bottom:10px;">LeakScope</h1>
+        <img src="{% static 'img/homepage.png' %}" alt="LeakScope" style="max-width:100%; height:auto; margin:20px auto; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+        <div style="background:#1f2937; border-radius:8px; padding:20px; margin:20px auto; max-width:820px; color:#d1d5db;">
+            <h3>Authorized Use Only</h3>
+            <p>Any authentication support is not supported by design. By clicking below you accept that misuse is your responsibility.</p>
+            <a class="btn btn-success btn-lg" href="{% url 'home' %}" style="margin-top:10px;">Peer Through the Scope</a>
+            <div style="margin-top:20px; text-align:left; color:#e5e7eb;">
+                <p><strong>Private IP:</strong> {{ private_ip }}</p>
+                <p><strong>Public IP:</strong> {{ public_ip }}</p>
+                <p><strong>Environment:</strong>
+                    {% for env in env_status %}
+                        <span style="display:inline-block; margin-right:8px; padding:4px 8px; border-radius:4px; background:{% if env.set %}#16a34a{% else %}#b91c1c{% endif %}; color:#fff;">
+                            {{ env.key }}
+                        </span>
+                    {% endfor %}
+                </p>
+                <p><strong>Total entries in DB:</strong> {{ total_entries }}</p>
+                <p><strong>Shodan credits used:</strong> {{ shodan_credits_used }}</p>
+            </div>
+        </div>
+    </div>
+    <footer style="padding: 20px 0; text-align: center; color: #9ca3af; font-size: 14px;">
+        Created by <a href="https://gainsec.com/" target="_blank" rel="noopener noreferrer" style="color:#60a5fa;">GainSec</a>
+    </footer>
+</body>
+</html>
+{% endblock %}
