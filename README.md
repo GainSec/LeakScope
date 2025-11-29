@@ -87,5 +87,5 @@ Other types are passive-only today; searching them relies on Shodan metadata unl
 
 ## Shoutouts
 
-Koa's s3 Bucket Name List - https://github.com/koaj/aws-s3-bucket-wordlist/blob/master/list.txt
-Wojciech's LeakLooker-X - https://github.com/woj-ciech/LeakLooker-X
+- **Koa's s3 Bucket Name List** - https://github.com/koaj/aws-s3-bucket-wordlist/blob/master/list.txt
+- **Wojciech's LeakLooker-X** - https://github.com/woj-ciech/LeakLooker-X
