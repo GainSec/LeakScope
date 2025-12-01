@@ -18,7 +18,8 @@ Search, triage, preview, and dump exposed services and code leaks using Shodan a
 
 ## Requirements
 - Docker with Compose (recommended) or Python 3.9+, Redis.
-- Shodan API key (paid/membership with query credits).
+- Shodan API key (paid/membership with query credits). # Optional if you use ZoomEye only
+- ZoomEye API key (membership with query credits). #Optional if you use Shodan only
 
 ## Environment variables
 | Name | Purpose | Required |
