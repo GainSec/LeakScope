@@ -182,9 +182,34 @@ padding: 5px;
                             </div>
                             <div class="col-lg-3 col-md-3 col-sm-3 col-xs-12">
                                 <div class="form-group">
-                                    <label for="page" style="color:#fff;">Pages</label>
+                                    <label style="color:#fff;">Provider</label>
+                                    <div class="nk-int-st" style="color:#fff;">
+                                        <label style="margin-right:10px;"><input type="radio" name="provider" value="shodan" checked> Shodan</label>
+                                        <label><input type="radio" name="provider" value="zoomeye"> ZoomEye</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-3 col-sm-3 col-xs-12">
+                                <div class="form-group">
+                                    <label style="color:#fff;">ZoomEye results/page</label>
                                     <div class="nk-int-st">
-                                        <input class="form-control" id='page' placeholder="1" type="number" min="1" value="1">
+                                        <input class="form-control" id='zoomeye_pagesize' placeholder="1" type="number" min="1" max="100" value="1">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-3 col-sm-3 col-xs-12">
+                                <div class="form-group">
+                                    <label for="page_start" style="color:#fff;">Start page</label>
+                                    <div class="nk-int-st">
+                                        <input class="form-control" id='page_start' placeholder="1" type="number" min="1" value="1">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-3 col-sm-3 col-xs-12">
+                                <div class="form-group">
+                                    <label for="page_count" style="color:#fff;">Pages to fetch</label>
+                                    <div class="nk-int-st">
+                                        <input class="form-control" id='page_count' placeholder="1" type="number" min="1" value="1">
                                     </div>
                                 </div>
                             </div>
@@ -229,11 +254,19 @@ padding: 5px;
                                         <button type="button" class="btn btn-xs btn-default type-btn" data-value="mongoexpress">Mongo Express</button>
                                         <button type="button" class="btn btn-xs btn-default type-btn" data-value="github">GitHub</button>
                                         <button type="button" class="btn btn-xs btn-default type-btn" data-value="keys">Keys</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="etcd">etcd</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="consul">Consul KV</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="rabbitmq">RabbitMQ Mgmt</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="solr">Solr</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="gitea">Gitea</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="gogs">Gogs</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="azureblob">Azure Blob</button>
+                                        <button type="button" class="btn btn-xs btn-default type-btn" data-value="gcsbucket">GCS Bucket</button>
                                     </div>
                                 </div>
 <br>
                         <div id="shodan-credit-banner" style="display:none; text-align:center; margin-bottom: 8px; color:#fbbf24; font-weight:bold;">
-                            Shodan API Credits Used: <span id="shodan-credit-count">1</span>
+                            <span id="credit-provider">Shodan</span> API Credits Used: <span id="shodan-credit-count">1</span>
                         </div>
                         <center><button id='submit' style="margin-top: 20px;"class="btn-lg btn-success notika-btn-success waves-effect">Search</button></center>
                                 <br>
@@ -362,15 +395,28 @@ padding: 5px;
     <script>
 // Estimate credits based on selected pages and types.
 function refreshShodanCredits() {
-    var pages = parseInt($('#page').val(), 10);
+    var pages = parseInt($('#page_count').val(), 10);
     if (isNaN(pages) || pages < 1) {
         pages = 1;
-        $('#page').val(1);
+        $('#page_count').val(1);
     }
     var typeCount = $('.type-btn.active').length;
+    var provider = ($('input[name=provider]:checked').val() || 'shodan').toLowerCase();
+    var zoomeyePagesize = parseInt($('#zoomeye_pagesize').val(), 10);
+    if (isNaN(zoomeyePagesize) || zoomeyePagesize < 1) {
+        zoomeyePagesize = 1;
+        $('#zoomeye_pagesize').val(1);
+    }
     var credits = pages * (typeCount || 1);
-    if (pages > 1) {
-        $('#shodan-credit-count').text(credits);
+    if (provider === 'zoomeye') {
+        // ZoomEye charges per result; estimate credits as pages * results_per_page * types.
+        credits = pages * zoomeyePagesize * (typeCount || 1);
+    }
+    $('#credit-provider').text(provider === 'zoomeye' ? 'ZoomEye' : 'Shodan');
+    $('#shodan-credit-count').text(credits);
+    if (provider === 'zoomeye') {
+        $('#shodan-credit-banner').show();
+    } else if (pages > 1) {
         $('#shodan-credit-banner').show();
     } else {
         $('#shodan-credit-banner').hide();
@@ -383,7 +429,8 @@ $(function(){
         $(this).toggleClass('active btn-primary');
         refreshShodanCredits();
     });
-    $('#page').on('input change', refreshShodanCredits);
+    $('#page_count').on('input change', refreshShodanCredits);
+    $('input[name=provider]').on('change', refreshShodanCredits);
 });
 </script>
 
@@ -475,6 +522,38 @@ $(function(){
         {
           label: "Mongo Express",
           value: "mongoexpress"
+        },
+        {
+          label: "etcd",
+          value: "etcd"
+        },
+        {
+          label: "Consul KV",
+          value: "consul"
+        },
+        {
+          label: "RabbitMQ Mgmt",
+          value: "rabbitmq"
+        },
+        {
+          label: "Solr",
+          value: "solr"
+        },
+        {
+          label: "Gitea",
+          value: "gitea"
+        },
+        {
+          label: "Gogs",
+          value: "gogs"
+        },
+        {
+          label: "Azure Blob",
+          value: "azureblob"
+        },
+        {
+          label: "GCS Bucket",
+          value: "gcsbucket"
         },
       ],
       value: [],
@@ -615,10 +694,15 @@ for(let i = 0; i < a.length; i++) {
         pgrbar = document.getElementById("pgrbar");
         pgrbar.style['width'] = '0%';
         pgrbar.textContent = "";
-         var pageVal = parseInt($('#page').val(), 10);
+         var pageVal = parseInt($('#page_start').val(), 10);
          if (isNaN(pageVal) || pageVal < 1) {
             pageVal = 1;
-            $('#page').val(1);
+            $('#page_start').val(1);
+         }
+         var pageCountVal = parseInt($('#page_count').val(), 10);
+         if (isNaN(pageCountVal) || pageCountVal < 1) {
+            pageCountVal = 1;
+            $('#page_count').val(1);
          }
          var types = [];
          $('.type-btn.active').each(function(){
@@ -629,9 +713,10 @@ for(let i = 0; i < a.length; i++) {
          for (var j = 0; j < types.length; j++) {
             new_type = types[j];
          dataString = 'country=' + $('input[id=country]').val() +
-                     '&keyword=' + $('input[id=keyword]').val() + '&exclude=' + $('input[id=exclude]').val() + '&network=' + $('input[id=network]').val() +
-                     '&type=' + types[j] + '&active_probe=' + ($('#active_probe').is(':checked') ? '1' : '0') +
-                     '&page=' + pageVal;
+                    '&keyword=' + $('input[id=keyword]').val() + '&exclude=' + $('input[id=exclude]').val() + '&network=' + $('input[id=network]').val() +
+                    '&type=' + types[j] + '&active_probe=' + ($('#active_probe').is(':checked') ? '1' : '0') +
+                    '&page=' + pageVal + '&page_count=' + pageCountVal + '&provider=' + ($('input[name=provider]:checked').val() || 'shodan') +
+                    '&zoomeye_pagesize=' + ($('#zoomeye_pagesize').val() || '1');
          const urlParams = new URLSearchParams(dataString);
          var param = urlParams.get('type');
 

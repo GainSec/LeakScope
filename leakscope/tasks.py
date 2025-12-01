@@ -26,6 +26,9 @@ from typing import Any, Dict, Optional, Tuple, List
 import ftplib
 import socket
 from pymongo import MongoClient
+from cassandra.cluster import Cluster, NoHostAvailable, ExecutionProfile, EXEC_PROFILE_DEFAULT, DCAwareRoundRobinPolicy
+from cassandra.query import SimpleStatement
+from cassandra.auth import PlainTextAuthProvider
 from bson import json_util
 
 try:
@@ -38,6 +41,7 @@ except ImportError:
 from urllib.request import Request, urlopen
 
 import hashlib
+import base64
 from django.utils import timezone
 from urllib.parse import urlparse
 import jxmlease
@@ -45,8 +49,10 @@ import jxmlease
 
 from leakscope_app.models import Monitor, Search, Rethink, Cassandra, Gitlab, Elastic, Dirs, Jenkins, Mongo, Rsync, \
     Sonarqube, Couchdb, Kibana, Ftp, Amazonbe, AmazonBuckets, Keys, Github, Amazons3be, Angular, Javascript, \
-    OpenSearch, Grafana, Prometheus, Minio, Swagger, MongoExpress, FingerprintLog, CustomQuery, Nexus, Artifactory, Registry
+    OpenSearch, Grafana, Prometheus, Minio, Swagger, MongoExpress, FingerprintLog, CustomQuery, Nexus, Artifactory, Registry, \
+    Etcd, ConsulKV, Rabbitmq, Solr, Gitea, Gogs, AzureBlob, GcsBucket
 from leakscope.shodan_client import ShodanClient, ShodanClientError
+from leakscope.zoomeye_client import ZoomEyeClient, ZoomEyeClientError, normalize_match
 
 broker_url = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
 app = celery.Celery('leakscope', broker=broker_url, backend=broker_url)
@@ -61,6 +67,10 @@ def get_config():
     cfg = {
         "config": {
             "SHODAN_API_KEY": os.environ.get("SHODAN_API_KEY", ""),
+            "ZOOMEYE_API_KEY": os.environ.get("ZOOMEYE_API_KEY", ""),
+            "ZOOMEYE_TIMEOUT": os.environ.get("ZOOMEYE_TIMEOUT", ""),
+            "ZOOMEYE_SUBTYPE": os.environ.get("ZOOMEYE_SUBTYPE", "all"),
+            "ZOOMEYE_PAGESIZE": os.environ.get("ZOOMEYE_PAGESIZE", "1"),
             "monitoring": {
                 "gmail_email": os.environ.get("GMAIL_EMAIL", ""),
                 "gmail_password": os.environ.get("GMAIL_PASSWORD", ""),
@@ -82,6 +92,14 @@ def get_config():
                         cfg["config"]["monitoring"].update(monitor_section)
                     if file_section.get("SHODAN_API_KEY"):
                         cfg["config"]["SHODAN_API_KEY"] = file_section.get("SHODAN_API_KEY")
+                    if file_section.get("ZOOMEYE_API_KEY"):
+                        cfg["config"]["ZOOMEYE_API_KEY"] = file_section.get("ZOOMEYE_API_KEY")
+                    if file_section.get("ZOOMEYE_TIMEOUT"):
+                        cfg["config"]["ZOOMEYE_TIMEOUT"] = file_section.get("ZOOMEYE_TIMEOUT")
+                    if file_section.get("ZOOMEYE_SUBTYPE"):
+                        cfg["config"]["ZOOMEYE_SUBTYPE"] = file_section.get("ZOOMEYE_SUBTYPE")
+                    if file_section.get("ZOOMEYE_PAGESIZE"):
+                        cfg["config"]["ZOOMEYE_PAGESIZE"] = file_section.get("ZOOMEYE_PAGESIZE")
     except Exception:
         logger.exception("Failed to read config.json; using environment configuration only")
 
@@ -179,7 +197,7 @@ regex_str = r"""
 
 context_delimiter_str = "\n"
 
-queries = {
+queries_shodan = {
     "gitlab": 'http.title:"GitLab"',
     "elastic": 'product:"Elastic" port:9200',
     "dirs": 'http.title:"Index of /" http.status:200',
@@ -213,6 +231,59 @@ queries = {
     "registry": 'http.title:"Docker Registry"',
     "harbor": 'http.title:"Harbor"',
     "dockerapi": '"docker-distribution-api"',
+    "etcd": 'product:"etcd" port:2379',
+    "consul": 'product:"Consul" port:8500',
+    "rabbitmq": 'http.title:"RabbitMQ Management" port:15672',
+    # Single primary query; variants are handled in code fallbacks (still one page/credit).
+    "solr": 'product:"Solr"',
+    "gitea": 'http.title:"Gitea" port:3000',
+    "gogs": 'http.title:"Gogs" port:3000',
+    "azureblob": 'http.title:"Azure Blob Storage" OR product:"Azure Blob"',
+    "gcsbucket": 'http.title:"Index of /storage.googleapis.com" OR product:"Google Cloud Storage"',
+}
+
+# ZoomEye-specific dorks, tuned to its schema where possible.
+queries_zoomeye = {
+    "gitlab": 'title:"GitLab" app:"GitLab"',
+    "elastic": 'app:"Elasticsearch" port:9200',
+    "dirs": 'title:"Index of /" status:200',
+    "jenkins": 'title:"Dashboard [Jenkins]"',
+    "mongo": 'app:"MongoDB"',
+    "rsync": 'port:873 "@RSYNCD"',
+    "sonarqube": 'title:"SonarQube"',
+    "couchdb": 'app:"CouchDB"',
+    "kibana": 'app:"Kibana"',
+    "cassandra": 'app:"Cassandra" port:9160',
+    "rethink": 'title:"RethinkDB Administration Console"',
+    "ftp": 'port:21 "230" "anonymous"',
+    "asia": 'hostname:"s3.ap-southeast-1.amazonaws.com"',
+    "europe": 'hostname:"s3-eu-west-1.amazonaws.com"',
+    "north america": 'hostname:"s3-us-west-2.amazonaws.com"',
+    "api_key": 'body:"api_key"',
+    "stripe": 'body:"STRIPE_KEY"',
+    "secret_key": 'body:"secret_key"',
+    "google_api_key": 'body:"google_api_key"',
+    "amazons3be": 'body:"ListBucketResult" "amazonaws.com"',
+    "angular": 'body:"polyfills" body:"main." body:"runtime"',
+    "opensearch": 'app:"OpenSearch" port:9200',
+    "grafana": 'title:"Grafana"',
+    "prometheus": 'title:"Prometheus"',
+    "minio": 'title:"MinIO Browser" OR app:"MinIO"',
+    "swagger": 'title:"swagger" OR title:"Swagger UI" OR title:"API Documentation"',
+    "mongoexpress": 'title:"Mongo Express"',
+    "nexus": 'title:"Nexus Repository Manager"',
+    "artifactory": 'title:"Artifactory"',
+    "registry": 'title:"Docker Registry"',
+    "harbor": 'title:"Harbor"',
+    "dockerapi": '"docker-distribution-api"',
+    "etcd": 'app:"etcd" port:2379',
+    "consul": 'app:"Consul" port:8500',
+    "rabbitmq": 'title:"RabbitMQ Management" port:15672',
+    "solr": 'app:"Solr"',
+    "gitea": 'title:"Gitea" port:3000',
+    "gogs": 'title:"Gogs" port:3000',
+    "azureblob": 'title:"Azure Blob Storage" OR app:"Azure Blob"',
+    "gcsbucket": 'title:"Index of /storage.googleapis.com" OR app:"Google Cloud Storage"',
 }
 
 buckets_all = [
@@ -229,13 +300,36 @@ HEX_CHARS = "1234567890abcdefABCDEF"
 
 exclude = ['.png','.jpg', '.sum', "yarn.lock", "package-lock.json", ".svg", ".css"]
 
-with open ("buckets.txt","r") as f:
-    buckets_bruteforce = f.readlines()
+def _load_wordlist(fname: str) -> list:
+    try:
+        with open(fname, "r") as f:
+            return f.readlines()
+    except Exception:
+        return []
+
+# Default S3 list
+buckets_bruteforce = _load_wordlist("buckets.txt")
+# Service-specific fallbacks
+azure_buckets_bruteforce = _load_wordlist("azure-buckets.txt") or buckets_bruteforce
+gcs_buckets_bruteforce = _load_wordlist("gcs-buckets.txt") or buckets_bruteforce
 
 def get_shodan_client() -> ShodanClient:
     config = get_config()
     api_key = config['config'].get('SHODAN_API_KEY', '')
     return ShodanClient(api_key)
+
+
+def get_zoomeye_client() -> ZoomEyeClient:
+    config = get_config()
+    api_key = config['config'].get('ZOOMEYE_API_KEY', '')
+    timeout = int(config['config'].get('ZOOMEYE_TIMEOUT', 30)) if str(config['config'].get('ZOOMEYE_TIMEOUT', '')).isdigit() else 30
+    return ZoomEyeClient(api_key, timeout=timeout)
+
+
+def provider_queries(provider: str) -> Dict[str, str]:
+    if (provider or '').lower() == 'zoomeye':
+        return queries_zoomeye
+    return queries_shodan
 
 
 def build_shodan_query(base_query: str, keyword: Optional[str] = None, country: Optional[str] = None,
@@ -272,6 +366,17 @@ def build_shodan_query(base_query: str, keyword: Optional[str] = None, country: 
                 parts.append(f"-{token}")
 
     return " ".join(parts).strip()
+
+
+def build_provider_query(provider: str, base_query: str, keyword: Optional[str] = None,
+                         country: Optional[str] = None, network: Optional[str] = None,
+                         exclude: Optional[str] = None) -> str:
+    # Shodan accepts implicit AND via spaces; ZoomEye prefers explicit && between clauses.
+    built = build_shodan_query(base_query, keyword=keyword, country=country, network=network, exclude=exclude)
+    if (provider or "").lower() == "zoomeye":
+        tokens = built.split()
+        return " && ".join(tokens)
+    return built
 
 
 class _SafeDict(dict):
@@ -337,7 +442,22 @@ def extract_ip_port(match: Dict[str, Any]) -> Tuple[str, Optional[int]]:
     port = match.get('port')
     return ip, port
 
-def check_credits():
+def check_credits(provider: str = "shodan"):
+    provider = (provider or "shodan").lower()
+    if provider == "zoomeye":
+        try:
+            client = get_zoomeye_client()
+            info = client.userinfo() or {}
+            data = info.get("data") or {}
+            subscription = data.get("subscription") or info.get("subscription") or {}
+            # Prefer zoomeye_points if present, else points.
+            return subscription.get("zoomeye_points") or subscription.get("points") or data.get("zoomeye_points") or data.get("points") or 0
+        except ZoomEyeClientError as exc:
+            logger.error("Unable to fetch ZoomEye points: %s", exc)
+        except Exception as exc:  # pragma: no cover - defensive catch
+            logger.exception("Unexpected error while fetching ZoomEye points")
+        return 0
+
     try:
         client = get_shodan_client()
         info = client.info()
@@ -349,12 +469,17 @@ def check_credits():
     return 0
 
 
-def stats(type=None):
+def stats(type=None, provider: str = "shodan"):
     if not type:
         return 0
 
-    query = queries.get(type)
+    qmap = provider_queries(provider)
+    query = qmap.get(type)
     if not query:
+        return 0
+
+    # For ZoomEye, live count may not be available; callers should rely on DB counts.
+    if (provider or "").lower() == "zoomeye":
         return 0
 
     try:
@@ -369,79 +494,136 @@ def stats(type=None):
 
 
 @shared_task(bind=True)
-def check_main(self, fk, keyword=None, country=None, network=None, page=None, type=None, exclude=None,
-               active_probe=False):
+def check_main(self, fk, keyword=None, country=None, network=None, page=None, page_count=None, type=None, exclude=None,
+               active_probe=False, provider: str = "shodan", zoomeye_pagesize=None):
     config = get_config()
     search = Search.objects.get(id=fk)
     progress_recorder = ProgressRecorder(self)
     results = {}
 
+    provider_lower = (provider or getattr(search, "provider", "shodan") or "shodan").lower()
+    if provider_lower not in ("shodan", "zoomeye"):
+        provider_lower = "shodan"
+
     type_lower = (type or "").lower()
+    keyword_for_query = keyword if keyword else None
 
-    if not keyword:
-        keyword_for_query = None
-    else:
-        keyword_for_query = keyword
-
-    base_query = queries.get(type_lower, "")
+    qmap = provider_queries(provider_lower)
+    base_query = qmap.get(type_lower, "")
     if not base_query and type_lower not in keys_all:
         error_msg = f"Unsupported search type: {type}"
         logger.error(error_msg)
         self.update_state(state="FAILURE", meta={"error": error_msg})
         raise Ignore()
 
-    shodan_query = build_shodan_query(base_query, keyword=keyword_for_query, country=country, network=network,
-                                      exclude=exclude)
+    final_query = build_provider_query(provider_lower, base_query, keyword=keyword_for_query, country=country,
+                                       network=network, exclude=exclude)
     try:
         page_num = int(page) if page else 1
     except ValueError:
         page_num = 1
+    try:
+        total_pages = int(page_count) if page_count else 1
+    except ValueError:
+        total_pages = 1
+    total_pages = max(1, total_pages)
+
+    matches = []
 
     try:
-        client = get_shodan_client()
-        if type_lower in ("registry", "harbor", "dockerapi"):
-            query_variants = [
-                queries.get(type_lower, ""),
-                queries.get("harbor", ""),
-                queries.get("dockerapi", ""),
-            ]
-            last_exc = None
-            response = None
-            for qv in query_variants:
-                qv = qv.strip()
-                if not qv:
-                    continue
-                try:
-                    response = client.host_search(qv, page=page_num)
-                    break
-                except ShodanClientError as exc:
-                    last_exc = exc
-                    continue
-            if response is None:
-                raise last_exc or ShodanClientError("No results for registry")
-        elif type_lower == "rethink":
-            query_variants = [
-                queries.get("rethink", ""),
-                'product:"RethinkDB"',
-                'product:"rethinkdb"',
-                'rethinkdb',
-            ]
-            last_exc = None
-            response = None
-            for qv in query_variants:
-                qv = qv.strip()
-                if not qv:
-                    continue
-                try:
-                    response = client.host_search(qv, page=page_num)
-                    break
-                except ShodanClientError as exc:
-                    last_exc = exc
-                    continue
-            if response is None:
-                raise last_exc or ShodanClientError("No results for rethinkdb")
+        if provider_lower == "zoomeye":
+            client = get_zoomeye_client()
+            sub_type = config['config'].get('ZOOMEYE_SUBTYPE', 'all')
+            pagesize_raw = zoomeye_pagesize or config['config'].get('ZOOMEYE_PAGESIZE', 1)
+            try:
+                pagesize = int(pagesize_raw)
+            except Exception:
+                pagesize = 1
+            events = 0
+            for pnum in range(page_num, page_num + total_pages):
+                response = client.search(final_query, page=pnum, pagesize=pagesize, sub_type=sub_type)
+                raw_matches = response.get('data', []) or []
+                events = max(events, response.get('total', len(raw_matches)))
+                for m in raw_matches:
+                    norm = normalize_match(m)
+                    if not norm.get('ip_str'):
+                        continue
+                    matches.append(norm)
+            total = len(matches)
         else:
-            response = client.host_search(shodan_query, page=page_num)
+            client = get_shodan_client()
+            events = 0
+            for pnum in range(page_num, page_num + total_pages):
+                if type_lower in ("registry", "harbor", "dockerapi"):
+                    query_variants = [
+                        qmap.get(type_lower, ""),
+                        qmap.get("harbor", ""),
+                        qmap.get("dockerapi", ""),
+                    ]
+                    last_exc = None
+                    response = None
+                    for qv in query_variants:
+                        qv = qv.strip()
+                        if not qv:
+                            continue
+                        try:
+                            response = client.host_search(qv, page=pnum)
+                            break
+                        except ShodanClientError as exc:
+                            last_exc = exc
+                            continue
+                    if response is None:
+                        raise last_exc or ShodanClientError("No results for registry")
+                elif type_lower == "rethink":
+                    query_variants = [
+                        qmap.get("rethink", ""),
+                        'product:"RethinkDB"',
+                        'product:"rethinkdb"',
+                        'rethinkdb',
+                    ]
+                    last_exc = None
+                    response = None
+                    for qv in query_variants:
+                        qv = qv.strip()
+                        if not qv:
+                            continue
+                        try:
+                            response = client.host_search(qv, page=pnum)
+                            break
+                        except ShodanClientError as exc:
+                            last_exc = exc
+                            continue
+                    if response is None:
+                        raise last_exc or ShodanClientError("No results for rethinkdb")
+                elif type_lower == "solr":
+                    query_variants = [
+                        qmap.get("solr", "").strip(),
+                        'http.title:"Apache Solr"',
+                        'http.title:"Solr Admin"',
+                    ]
+                    last_exc = None
+                    response = None
+                    for qv in query_variants:
+                        if not qv:
+                            continue
+                        try:
+                            response = client.host_search(qv, page=pnum)
+                            break
+                        except ShodanClientError as exc:
+                            last_exc = exc
+                            continue
+                    if response is None:
+                        raise last_exc or ShodanClientError("No results for solr")
+                else:
+                    response = client.host_search(final_query, page=pnum)
+                page_matches = response.get('matches', [])
+                events = max(events, response.get('total', len(page_matches)))
+                matches.extend(page_matches)
+            total = len(matches)
+    except ZoomEyeClientError as exc:
+        logger.error("ZoomEye search failed for %s: %s", type, exc)
+        self.update_state(state="FAILURE", meta={"error": str(exc)})
+        raise Ignore()
     except ShodanClientError as exc:
         logger.error("Shodan search failed for %s: %s", type, exc)
         # Try local fallback for supported types to keep UI responsive.
@@ -471,13 +653,13 @@ def check_main(self, fk, keyword=None, country=None, network=None, page=None, ty
         )
         raise Ignore()
     except Exception as exc:  # pragma: no cover - defensive catch
-        logger.exception("Unexpected error during Shodan search for %s", type)
+        logger.exception("Unexpected error during search for %s", type)
         self.update_state(state="FAILURE", meta={"error": str(exc)})
         raise Ignore()
 
-    matches = response.get('matches', [])
-    total = len(matches)
-    events = response.get('total', total)
+    if provider_lower == "zoomeye" and total == 0:
+        # No results from ZoomEye; simply return empty set
+        pass
 
     if total == 0:
         # If Shodan returned nothing, optionally surface existing DB records for select types.
@@ -565,6 +747,22 @@ def check_main(self, fk, keyword=None, country=None, network=None, page=None, ty
                     result_payload = check_artifactory(index, match, search, config=config)
                 elif type_lower in ('registry', 'harbor', 'dockerapi'):
                     result_payload = check_registry(index, match, search, config=config)
+                elif type_lower == 'etcd':
+                    result_payload = check_etcd(index, match, search, config=config, active_probe=active_probe)
+                elif type_lower == 'consul':
+                    result_payload = check_consul(index, match, search, config=config, active_probe=active_probe)
+                elif type_lower == 'rabbitmq':
+                    result_payload = check_rabbitmq(index, match, search, config=config, active_probe=active_probe)
+                elif type_lower == 'solr':
+                    result_payload = check_solr(index, match, search, config=config, active_probe=active_probe)
+                elif type_lower == 'gitea':
+                    result_payload = check_gitea(index, match, search, config=config, active_probe=active_probe, product_hint="gitea")
+                elif type_lower == 'gogs':
+                    result_payload = check_gitea(index, match, search, config=config, active_probe=active_probe, product_hint="gogs")
+                elif type_lower == 'azureblob':
+                    result_payload = check_azureblob(index, match, search, config=config, active_probe=active_probe)
+                elif type_lower == 'gcsbucket':
+                    result_payload = check_gcsbucket(index, match, search, config=config, active_probe=active_probe)
                 else:
                     logger.warning("No handler implemented for type %s", type_lower)
                     result_payload = {}
@@ -586,14 +784,14 @@ def check_main(self, fk, keyword=None, country=None, network=None, page=None, ty
 
     self.update_state(state="SUCCESS",
                       meta={"type": result_type if matches else type_lower, "total": total,
-                            'events': events, 'results': results})
+                            'events': events, 'results': results, 'provider': provider_lower})
 
     raise Ignore()
 
 
 @shared_task(bind=True)
 def check_custom_query(self, custom_query_id, keyword=None, country=None, network=None, exclude=None, page=None,
-                       active_probe=None):
+                       page_count=None, active_probe=None, provider: str = "shodan"):
     config = get_config()
     try:
         custom_query = CustomQuery.objects.get(id=custom_query_id)
@@ -607,6 +805,10 @@ def check_custom_query(self, custom_query_id, keyword=None, country=None, networ
     CustomQuery.objects.filter(id=custom_query_id).update(
         last_run_at=timezone.now(), last_status="running", last_error=""
     )
+
+    provider_lower = (provider or custom_query.provider or "shodan").lower()
+    if provider_lower not in ("shodan", "zoomeye"):
+        provider_lower = "shodan"
 
     active_probe_flag = custom_query.active_probe_default if active_probe is None else active_probe
 
@@ -628,29 +830,66 @@ def check_custom_query(self, custom_query_id, keyword=None, country=None, networ
         page_num = int(page) if page else 1
     except ValueError:
         page_num = 1
+    try:
+        total_pages = int(page_count) if page_count else 1
+    except ValueError:
+        total_pages = 1
+    total_pages = max(1, total_pages)
 
     try:
-        client = get_shodan_client()
-        response = client.host_search(rendered_query, page=page_num)
-    except ShodanClientError as exc:
-        error_msg = f"Shodan search failed: {exc}"
+        if provider_lower == "zoomeye":
+            client = get_zoomeye_client()
+            collected = []
+            events_total = 0
+            pagesize_raw = config['config'].get('ZOOMEYE_PAGESIZE', 1)
+            try:
+                pagesize = int(pagesize_raw)
+            except Exception:
+                pagesize = 1
+            for pnum in range(page_num, page_num + total_pages):
+                resp = client.search(rendered_query, page=pnum, pagesize=pagesize, sub_type=config['config'].get('ZOOMEYE_SUBTYPE', 'all'))
+                events_total = max(events_total, resp.get('total', 0))
+                collected.extend(resp.get('data', []) or [])
+            response = {"data": collected, "total": events_total if events_total else len(collected)}
+        else:
+            client = get_shodan_client()
+            collected = []
+            events_total = 0
+            for pnum in range(page_num, page_num + total_pages):
+                resp = client.host_search(rendered_query, page=pnum)
+                events_total = max(events_total, resp.get('total', 0))
+                collected.extend(resp.get('matches', []) or [])
+            response = {"matches": collected, "total": events_total if events_total else len(collected)}
+    except (ZoomEyeClientError, ShodanClientError) as exc:
+        error_msg = f"{provider_lower.title()} search failed: {exc}"
         CustomQuery.objects.filter(id=custom_query_id).update(last_status="failed", last_error=error_msg)
         logger.error(error_msg)
         # Return an empty success to avoid UI crashes, carrying the error message.
         self.update_state(state="SUCCESS", meta={"type": result_type, "total": 0, "events": 0, "results": {}, "error": error_msg})
         raise Ignore()
     except Exception as exc:  # pragma: no cover
-        error_msg = f"Unexpected error during Shodan search: {exc}"
+        error_msg = f"Unexpected error during {provider_lower} search: {exc}"
         CustomQuery.objects.filter(id=custom_query_id).update(last_status="failed", last_error=error_msg)
         logger.exception(error_msg)
         self.update_state(state="SUCCESS", meta={"type": result_type, "total": 0, "events": 0, "results": {}, "error": error_msg})
         raise Ignore()
 
-    matches = response.get('matches', [])
-    total = len(matches)
-    events = response.get('total', total)
+    if provider_lower == "zoomeye":
+        raw_matches = response.get('data', []) or []
+        matches = []
+        for m in raw_matches:
+            norm = normalize_match(m)
+            if not norm.get('ip_str'):
+                continue
+            matches.append(norm)
+        total = len(matches)
+        events = response.get('total', total)
+    else:
+        matches = response.get('matches', [])
+        total = len(matches)
+        events = response.get('total', total)
     result_type = (custom_query.default_type or "custom").lower()
-    search = Search(type=result_type, keyword=keyword or "", country=country or "", network=network or "")
+    search = Search(type=result_type, keyword=keyword or "", country=country or "", network=network or "", provider=provider_lower)
     search.save()
 
     progress_recorder = ProgressRecorder(self)
@@ -681,6 +920,14 @@ def check_custom_query(self, custom_query_id, keyword=None, country=None, networ
         "mongoexpress": lambda idx, m: check_mongoexpress(idx, m, search, config=config),
         "keys": lambda idx, m: check_keys(idx, m, search, config=config),
         "amazonbuckets": lambda idx, m: check_amazonbe(idx, m, search, config=config),
+        "etcd": lambda idx, m: check_etcd(idx, m, search, config=config, active_probe=active_probe_flag),
+        "consul": lambda idx, m: check_consul(idx, m, search, config=config, active_probe=active_probe_flag),
+        "rabbitmq": lambda idx, m: check_rabbitmq(idx, m, search, config=config, active_probe=active_probe_flag),
+        "solr": lambda idx, m: check_solr(idx, m, search, config=config, active_probe=active_probe_flag),
+        "gitea": lambda idx, m: check_gitea(idx, m, search, config=config, active_probe=active_probe_flag, product_hint="gitea"),
+        "gogs": lambda idx, m: check_gitea(idx, m, search, config=config, active_probe=active_probe_flag, product_hint="gogs"),
+        "azureblob": lambda idx, m: check_azureblob(idx, m, search, config=config, active_probe=active_probe_flag),
+        "gcsbucket": lambda idx, m: check_gcsbucket(idx, m, search, config=config, active_probe=active_probe_flag),
     }
 
     default_total = total if total > 0 else 1
@@ -719,7 +966,7 @@ def check_custom_query(self, custom_query_id, keyword=None, country=None, networ
     CustomQuery.objects.filter(id=custom_query_id).update(last_status="success", last_error="")
     self.update_state(state="SUCCESS",
                       meta={"type": result_type or 'custom', "total": total,
-                            'events': events, 'results': results})
+                            'events': events, 'results': results, 'provider': provider_lower})
     raise Ignore()
 
 
@@ -1079,11 +1326,106 @@ def _preview_angular(url: str) -> Dict[str, Any]:
         return {"summary": "Probe failed", "items": []}
 
 def _preview_cassandra(ip: str, port: Any) -> Dict[str, Any]:
+    """
+    Light-weight, no-auth preview for Cassandra.
+    Uses cassandra-driver for unauthenticated system.local + schema peek if open; otherwise falls back to TCP probes.
+    """
+    items: List[Dict[str, Any]] = []
+    notes: List[str] = []
+
+    thrift_port = _safe_int(port, 9160)
+    cql_port = _safe_int(port, 9042)
+    summary_parts = []
+
+    # Try native driver first (no auth). Prefer 9042, then provided port if different.
+    attempted_ports = []
+    for cport in [9042, cql_port]:
+        if cport in attempted_ports:
+            continue
+        attempted_ports.append(cport)
+        try:
+            profile = ExecutionProfile(
+                load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="dc1", used_hosts_per_remote_dc=0),
+                request_timeout=3,
+            )
+            cluster = Cluster(
+                contact_points=[ip],
+                port=cport,
+                connect_timeout=3,
+                protocol_version=4,
+                execution_profiles={EXEC_PROFILE_DEFAULT: profile},
+                allow_beta_protocol_version=False,
+            )
+            session = cluster.connect()
+            try:
+                row = session.execute("SELECT cluster_name, data_center, rack, release_version, cql_version FROM system.local").one()
+                if row:
+                    items.append({"cluster": row.cluster_name, "dc": row.data_center, "rack": row.rack,
+                                  "release_version": row.release_version, "cql_version": row.cql_version, "port": cport})
+                    summary_parts.append("CQL open (no auth)")
+            except Exception as exc:
+                notes.append(f"system.local query failed: {exc.__class__.__name__}")
+            try:
+                ks_rows = session.execute("SELECT keyspace_name FROM system_schema.keyspaces")
+                ks_list = [r.keyspace_name for r in ks_rows][:20]
+                if ks_list:
+                    items.append({"keyspaces": ks_list})
+            except Exception as exc:
+                notes.append(f"Keyspace list failed: {exc.__class__.__name__}")
+            try:
+                tbl_rows = session.execute("SELECT keyspace_name, table_name FROM system_schema.tables")
+                tbls: Dict[str, List[str]] = {}
+                for r in tbl_rows:
+                    tbls.setdefault(r.keyspace_name, [])
+                    if len(tbls[r.keyspace_name]) < 20:
+                        tbls[r.keyspace_name].append(r.table_name)
+                if tbls:
+                    items.append({"tables": tbls})
+            except Exception:
+                pass
+            cluster.shutdown()
+            break
+        except NoHostAvailable:
+            notes.append(f"CQL driver connect failed (port {cport}): NoHostAvailable")
+        except Exception as exc:
+            notes.append(f"CQL driver connect failed (port {cport}): {exc.__class__.__name__}")
+
+    # Check legacy Thrift port
     try:
-        with socket.create_connection((ip, _safe_int(port, 9160)), timeout=5):
-            return {"summary": "TCP connection ok", "items": [{"ip": ip, "port": port}]}
-    except Exception:
-        return {"summary": "Connection failed", "items": []}
+        with socket.create_connection((ip, thrift_port), timeout=4):
+            items.append({"tcp": "ok", "port": thrift_port, "protocol": "thrift"})
+    except Exception as exc:
+        notes.append(f"Thrift {thrift_port} unreachable: {exc.__class__.__name__}")
+
+    # Check CQL port(s) and send OPTIONS to get a fingerprint
+    for cport in attempted_ports:
+        try:
+            with socket.create_connection((ip, cport), timeout=4) as cql:
+                items.append({"tcp": "ok", "port": cport, "protocol": "cql"})
+                try:
+                    # Native protocol v4 OPTIONS (opcode 0x05) with empty body
+                    import struct
+                    header = struct.pack(">bbbbI", 0x04, 0x00, 0x01, 0x05, 0)
+                    cql.sendall(header)
+                    resp = cql.recv(2048)
+                    if resp:
+                        items.append({"cql_options_hex": resp.hex()[:200], "port": cport})
+                except Exception as exc:  # pragma: no cover
+                    notes.append(f"CQL OPTIONS failed on {cport}: {exc.__class__.__name__}")
+        except Exception as exc:
+            notes.append(f"CQL {cport} unreachable: {exc.__class__.__name__}")
+
+    if any(i.get("protocol") == "cql" for i in items):
+        summary_parts.append("CQL port reachable")
+    if any(i.get("protocol") == "thrift" for i in items):
+        summary_parts.append("Thrift port reachable")
+    if not summary_parts:
+        summary_parts.append("Connection failed")
+    summary = "; ".join(summary_parts)
+    if notes:
+        items.append({"notes": "; ".join(notes[:3])})
+
+    return {"summary": summary, "items": items[:5]}
 
 def _preview_rethink(ip: str, port: Any) -> Dict[str, Any]:
     try:
@@ -1269,6 +1611,233 @@ def _preview_rsync(ip: str, port: Any) -> Dict[str, Any]:
     return {"summary": summary, "items": items}
 
 
+def _preview_etcd(ip: str, port: Any) -> Dict[str, Any]:
+    summary = ""
+    items: List[Dict[str, Any]] = []
+    auth_required = False
+    for scheme in ("http", "https"):
+        base = _http_base(ip, port, scheme=scheme)
+        try:
+            ver = requests.get(f"{base}/version", timeout=4, verify=False)
+            if ver.status_code in (401, 403):
+                auth_required = True
+                continue
+            if ver.ok and isinstance(ver.json(), dict):
+                summary = f"version={ver.json().get('etcdserver') or ver.json().get('etcdcluster')}"
+            health = requests.get(f"{base}/health", timeout=4, verify=False)
+            if health.status_code in (401, 403):
+                auth_required = True
+            elif health.ok:
+                summary = summary or health.text
+            kv = requests.get(f"{base}/v2/keys/?recursive=true&sorted=true&limit=10", timeout=5, verify=False)
+            if kv.status_code == 404:
+                payload = {"key": "", "range_end": "", "limit": 10}
+                v3 = requests.post(f"{base}/v3/kv/range", json=payload, timeout=5, verify=False)
+                if v3.ok:
+                    try:
+                        for kvs in v3.json().get("kvs", []) or []:
+                            k = kvs.get("key")
+                            if k:
+                                items.append({"key": base64.b64decode(k).decode(errors="ignore")})
+                    except Exception:
+                        pass
+            elif kv.status_code in (401, 403):
+                auth_required = True
+            elif kv.ok:
+                try:
+                    data = kv.json()
+                    def _collect(node):
+                        if isinstance(node, dict):
+                            key = node.get("key")
+                            if key:
+                                items.append({"key": key})
+                            for child in node.get("nodes", []) or []:
+                                _collect(child)
+                    _collect(data.get("node", {}))
+                except Exception:
+                    pass
+            break
+        except Exception:
+            continue
+    if auth_required and not items:
+        summary = "auth required"
+    return {"summary": summary or ("keys: %s" % len(items)), "items": items[:10]}
+
+
+def _preview_consul(ip: str, port: Any) -> Dict[str, Any]:
+    summary = ""
+    items: List[Dict[str, Any]] = []
+    auth_required = False
+    for scheme in ("http", "https"):
+        base = _http_base(ip, port, scheme=scheme)
+        try:
+            dcs = requests.get(f"{base}/v1/catalog/datacenters", timeout=4, verify=False)
+            if dcs.status_code in (401, 403):
+                auth_required = True
+                continue
+            if dcs.ok and isinstance(dcs.json(), list):
+                for dc in dcs.json()[:10]:
+                    items.append({"datacenter": dc})
+            svcs = requests.get(f"{base}/v1/catalog/services", timeout=4, verify=False)
+            if svcs.status_code in (401, 403):
+                auth_required = True
+            elif svcs.ok and isinstance(svcs.json(), dict):
+                for svc in list(svcs.json().keys())[:10]:
+                    items.append({"service": svc})
+            kv = requests.get(f"{base}/v1/kv/?keys&limit=10", timeout=4, verify=False)
+            if kv.status_code in (401, 403):
+                auth_required = True
+            elif kv.ok and isinstance(kv.json(), list):
+                for k in kv.json()[:10]:
+                    items.append({"key": k})
+            break
+        except Exception:
+            continue
+    if auth_required and not items:
+        summary = "auth required"
+    return {"summary": summary or ("items: %s" % len(items)), "items": items[:15]}
+
+
+def _preview_rabbitmq(ip: str, port: Any) -> Dict[str, Any]:
+    summary = ""
+    items: List[Dict[str, Any]] = []
+    auth_required = False
+    for scheme in ("http", "https"):
+        base = _http_base(ip, port, scheme=scheme)
+        try:
+            ov = requests.get(f"{base}/api/overview", timeout=4, verify=False)
+            if ov.status_code in (401, 403):
+                auth_required = True
+                continue
+            if ov.ok and isinstance(ov.json(), dict):
+                summary = f"version={ov.json().get('rabbitmq_version','')}"
+            vhosts = requests.get(f"{base}/api/vhosts", timeout=4, verify=False)
+            if vhosts.status_code in (401, 403):
+                auth_required = True
+            elif vhosts.ok and isinstance(vhosts.json(), list):
+                for vh in vhosts.json()[:10]:
+                    if isinstance(vh, dict) and vh.get("name"):
+                        items.append({"vhost": vh.get("name")})
+                    elif isinstance(vh, str):
+                        items.append({"vhost": vh})
+            queues = requests.get(f"{base}/api/queues", timeout=5, verify=False)
+            if queues.status_code in (401, 403):
+                auth_required = True
+            elif queues.ok and isinstance(queues.json(), list):
+                for q in queues.json()[:10]:
+                    if isinstance(q, dict) and q.get("name"):
+                        items.append({"queue": q.get("name"), "vhost": q.get("vhost")})
+            break
+        except Exception:
+            continue
+    if auth_required and not items:
+        summary = "auth required"
+    return {"summary": summary or ("items: %s" % len(items)), "items": items[:15]}
+
+
+def _preview_solr(ip: str, port: Any) -> Dict[str, Any]:
+    summary = ""
+    items: List[Dict[str, Any]] = []
+    auth_required = False
+    for scheme in ("http", "https"):
+        base = _http_base(ip, port, scheme=scheme)
+        try:
+            cores_resp = requests.get(f"{base}/solr/admin/cores?action=STATUS&wt=json", timeout=6, verify=False)
+            if cores_resp.status_code in (401, 403):
+                auth_required = True
+                continue
+            if cores_resp.ok and isinstance(cores_resp.json(), dict):
+                status = cores_resp.json().get("status", {})
+                if isinstance(status, dict):
+                    items = [{"core": name} for name in list(status.keys())[:15]]
+                version = cores_resp.headers.get("X-Solr-Version", "") or ""
+                summary = summary or (f"version={version}" if version else "")
+                break
+        except Exception:
+            continue
+    if auth_required and not items:
+        summary = "auth required"
+    return {"summary": summary or ("cores: %s" % len(items)), "items": items[:15]}
+
+
+def _preview_gitea(ip: str, port: Any) -> Dict[str, Any]:
+    summary = ""
+    items: List[Dict[str, Any]] = []
+    auth_required = False
+    for scheme in ("http", "https"):
+        base = _http_base(ip, port, scheme=scheme)
+        try:
+            resp = requests.get(f"{base}/api/v1/repos/search?limit=15", timeout=6, verify=False)
+            if resp.status_code in (401, 403):
+                auth_required = True
+                continue
+            if resp.ok and isinstance(resp.json(), dict):
+                data = resp.json().get("data", []) or resp.json().get("repos", [])
+                for r in data[:15]:
+                    if isinstance(r, dict) and r.get("full_name"):
+                        items.append({"repo": r.get("full_name")})
+            break
+        except Exception:
+            continue
+    if auth_required and not items:
+        summary = "auth required"
+    return {"summary": summary or ("repos: %s" % len(items)), "items": items[:15]}
+
+
+def _preview_azureblob(ip: str, port: Any) -> Dict[str, Any]:
+    summary = ""
+    items: List[Dict[str, Any]] = []
+    auth_required = False
+    base = _http_base(ip, port, scheme="https")
+    try:
+        resp = requests.get(f"{base}/?comp=list&maxresults=15", timeout=6, verify=False)
+        if resp.status_code in (401, 403):
+            auth_required = True
+        elif resp.ok and "EnumerationResults" in resp.text:
+            try:
+                parsed = jxmlease.Parser()(resp.text)
+                conts = parsed.get("EnumerationResults", {}).get("Containers", {}).get("Container", [])
+                if isinstance(conts, dict):
+                    conts = [conts]
+                for c in conts[:15]:
+                    if isinstance(c, dict) and c.get("Name"):
+                        items.append({"container": c.get("Name")})
+            except Exception:
+                pass
+    except Exception:
+        pass
+    if auth_required and not items:
+        summary = "auth required"
+    return {"summary": summary or ("containers: %s" % len(items)), "items": items[:15]}
+
+
+def _preview_gcsbucket(ip: str, port: Any) -> Dict[str, Any]:
+    summary = ""
+    items: List[Dict[str, Any]] = []
+    auth_required = False
+    base = _http_base(ip, port, scheme="https")
+    try:
+        resp = requests.get(f"{base}/", timeout=6, verify=False)
+        if resp.status_code in (401, 403):
+            auth_required = True
+        elif resp.ok and "ListBucketResult" in resp.text:
+            try:
+                parsed = jxmlease.Parser()(resp.text)
+                contents = parsed.get("ListBucketResult", {}).get("Contents", [])
+                if isinstance(contents, dict):
+                    contents = [contents]
+                for c in contents[:15]:
+                    if isinstance(c, dict) and c.get("Key"):
+                        items.append({"object": c.get("Key")})
+            except Exception:
+                pass
+    except Exception:
+        pass
+    if auth_required and not items:
+        summary = "auth required"
+    return {"summary": summary or ("objects: %s" % len(items)), "items": items[:15]}
+
+
 @shared_task(bind=True)
 def run_preview(self, type=None, target_id=None, active_probe=False):
     if not active_probe:
@@ -1307,6 +1876,14 @@ def run_preview(self, type=None, target_id=None, active_probe=False):
         "amazonbe": Amazonbe,
         "javascript": Javascript,
         "github": Github,
+        "etcd": Etcd,
+        "consul": ConsulKV,
+        "rabbitmq": Rabbitmq,
+        "solr": Solr,
+        "gitea": Gitea,
+        "gogs": Gogs,
+        "azureblob": AzureBlob,
+        "gcsbucket": GcsBucket,
     }
     Model = model_map.get(type_lower)
     if not Model:
@@ -1394,6 +1971,28 @@ def run_preview(self, type=None, target_id=None, active_probe=False):
         result = _preview_javascript(obj)
     elif type_lower == "github":
         result = _preview_github(obj)
+    elif type_lower == "etcd":
+        result = _preview_etcd(obj.ip, obj.port)
+    elif type_lower == "consul":
+        result = _preview_consul(obj.ip, obj.port)
+    elif type_lower == "rabbitmq":
+        result = _preview_rabbitmq(obj.ip, obj.port)
+    elif type_lower == "solr":
+        result = _preview_solr(obj.ip, obj.port)
+    elif type_lower == "gitea":
+        result = _preview_gitea(obj.ip, obj.port)
+    elif type_lower == "gogs":
+        result = _preview_gitea(obj.ip, obj.port)
+    elif type_lower == "azureblob":
+        result = _preview_azureblob(obj.ip, obj.port)
+    elif type_lower == "gcsbucket":
+        result = _preview_gcsbucket(obj.ip, obj.port)
+    elif type_lower == "etcd":
+        result = _preview_etcd(obj.ip, obj.port)
+    elif type_lower == "consul":
+        result = _preview_consul(obj.ip, obj.port)
+    elif type_lower == "rabbitmq":
+        result = _preview_rabbitmq(obj.ip, obj.port)
 
     safe_items = _json_safe(result.get("items", []))
     safe_summary = _json_safe(result.get("summary", ""))
@@ -1418,6 +2017,7 @@ def export_preview_data(self, type: str, target_id: Any, selection: Optional[Dic
     sel_bucket = (selection.get("bucket") or "").strip()
     sel_filter = (selection.get("filter") or "").strip()
     sel_keyspace = (selection.get("keyspace") or "").strip()
+    sel_table = (selection.get("table") or "").strip()
     sel_max_repos = selection.get("max_repos")
     sel_max_tags = selection.get("max_tags")
 
@@ -1425,6 +2025,20 @@ def export_preview_data(self, type: str, target_id: Any, selection: Optional[Dic
         if not isinstance(val, str):
             return str(val or "").strip()
         return val.strip().strip("'\"/ ")
+
+    def _json_safe_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            # Ensure meta can be serialized; fall back to string conversion.
+            json.dumps(meta, default=str)
+            return meta
+        except Exception:
+            safe_meta = {}
+            for k, v in meta.items():
+                try:
+                    safe_meta[k] = json.loads(json.dumps(v, default=str))
+                except Exception:
+                    safe_meta[k] = str(v)
+            return safe_meta
 
     model_map = {
         "elastic": Elastic,
@@ -1455,6 +2069,14 @@ def export_preview_data(self, type: str, target_id: Any, selection: Optional[Dic
         "amazonbe": Amazonbe,
         "javascript": Javascript,
         "github": Github,
+        "etcd": Etcd,
+        "consul": ConsulKV,
+        "rabbitmq": Rabbitmq,
+        "solr": Solr,
+        "gitea": Gitea,
+        "gogs": Gogs,
+        "azureblob": AzureBlob,
+        "gcsbucket": GcsBucket,
     }
     Model = model_map.get(type_lower)
     if not Model:
@@ -1727,7 +2349,67 @@ def export_preview_data(self, type: str, target_id: Any, selection: Optional[Dic
             flt = sel_filter or sel_keyspace or (selection.get("index") or "").strip()
             if flt:
                 keyspaces = [k for k in keyspaces if flt.lower() in k.lower()]
-            export_payload = [{"ip": obj.ip, "port": obj.port, "keyspaces": keyspaces[:max_items]}]
+
+            # Optional live, no-auth schema peek to enrich keyspace/table listing using cassandra-driver
+            live_keyspaces: List[str] = []
+            table_map: Dict[str, List[str]] = {}
+            auth_required = False
+            candidate_ports = []
+            cport = _safe_int(obj.port, 9042)
+            for p in [9042, cport]:
+                if p not in candidate_ports:
+                    candidate_ports.append(p)
+            for p in candidate_ports:
+                try:
+                    profile = ExecutionProfile(
+                        load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="dc1", used_hosts_per_remote_dc=0),
+                        request_timeout=3,
+                    )
+                    cluster = Cluster(
+                        contact_points=[obj.ip],
+                        port=p,
+                        connect_timeout=3,
+                        protocol_version=4,
+                        execution_profiles={EXEC_PROFILE_DEFAULT: profile},
+                        allow_beta_protocol_version=False,
+                    )
+                    session = cluster.connect()
+                    try:
+                        ks_rows = session.execute("SELECT keyspace_name FROM system_schema.keyspaces")
+                        live_keyspaces = [r.keyspace_name for r in ks_rows][:25]
+                    except Exception as exc:
+                        if "auth" in str(exc).lower() or "permission" in str(exc).lower():
+                            auth_required = True
+                    try:
+                        tbl_rows = session.execute("SELECT keyspace_name, table_name FROM system_schema.tables")
+                        for r in tbl_rows:
+                            table_map.setdefault(r.keyspace_name, [])
+                            if len(table_map[r.keyspace_name]) < 25:
+                                table_map[r.keyspace_name].append(r.table_name)
+                    except Exception as exc:
+                        if "auth" in str(exc).lower() or "permission" in str(exc).lower():
+                            auth_required = True
+                    cluster.shutdown()
+                    break
+                except NoHostAvailable:
+                    continue
+                except Exception as exc:
+                    if "auth" in str(exc).lower() or "permission" in str(exc).lower():
+                        auth_required = True
+
+            combined_keyspaces = list({*(k for k in keyspaces), *(k for k in live_keyspaces)})
+            if flt:
+                combined_keyspaces = [k for k in combined_keyspaces if flt.lower() in k.lower()]
+
+            export_payload = [{
+                "ip": obj.ip,
+                "port": obj.port,
+                "keyspaces": combined_keyspaces[:max_items],
+                "tables": table_map,
+                "table_requested": sel_table,
+                "auth_required": auth_required,
+                "note": "No-auth schema peek only; provide keyspace/table to export. Auth-required clusters are not accessed, and rows are not fetched without open access."
+            }]
         elif type_lower == "rethink":
             dbs = getattr(obj, "databases", []) or []
             if isinstance(dbs, str):
@@ -1761,15 +2443,197 @@ def export_preview_data(self, type: str, target_id: Any, selection: Optional[Dic
                     continue
                 items.append({"secret": sec, "path": paths_list[idx] if idx < len(paths_list) else "", "commit": commit})
             export_payload = items[:max_items]
+        elif type_lower == "solr":
+            base = _http_base(obj.ip, obj.port, scheme=getattr(obj, "scheme", "http") or "http")
+            core_name = _clean_name(sel_index) or ""
+            try:
+                cores = []
+                c_resp = requests.get(f"{base}/solr/admin/cores?action=STATUS&wt=json", timeout=8, verify=False)
+                if c_resp.status_code in (401, 403):
+                    export_payload = [{"error": "auth required"}]
+                elif c_resp.ok and isinstance(c_resp.json(), dict):
+                    status = c_resp.json().get("status", {})
+                    cores = list(status.keys())
+                if not core_name and cores:
+                    core_name = cores[0]
+                if core_name:
+                    rows_cap = _limit_max(max_items, default=50, hard_max=200)
+                    s_resp = requests.get(f"{base}/solr/{core_name}/select?q=*:*&rows={rows_cap}&wt=json", timeout=8, verify=False)
+                    if s_resp.status_code in (401, 403):
+                        export_payload = [{"error": "auth required"}]
+                    elif s_resp.ok:
+                        docs = s_resp.json().get("response", {}).get("docs", [])
+                        export_payload = docs[:rows_cap]
+                    else:
+                        export_payload = [{"error": f"HTTP {s_resp.status_code}"}]
+                elif not export_payload:
+                    export_payload = [{"message": "No cores found"}]
+            except Exception as exc:
+                export_payload = [{"error": str(exc)}]
+        elif type_lower in ("gitea", "gogs"):
+            repos = getattr(obj, "repos", "") or ""
+            if isinstance(repos, str):
+                try:
+                    repos_list = json.loads(repos)
+                except Exception:
+                    repos_list = [r.strip() for r in repos.split(",") if r.strip()]
+            else:
+                repos_list = list(repos)
+            flt = sel_filter or (selection.get("index") or "").strip()
+            if flt:
+                repos_list = [r for r in repos_list if flt.lower() in str(r).lower()]
+            export_payload = [{"repo": r} for r in repos_list[:max_items]]
+            if not export_payload:
+                export_payload = [{"message": "No repos found"}]
+        elif type_lower == "azureblob":
+            base_host = getattr(obj, "account", "") or getattr(obj, "search", None)
+            host = base_host if base_host else obj.ip
+            container = _clean_name(sel_index) or ""
+            try:
+                max_cap = _limit_max(max_items, default=50, hard_max=200)
+                base = f"{_http_base(host, obj.port, scheme=getattr(obj, 'scheme', 'https') or 'https')}".rstrip("/")
+                url = f"{base}/?comp=list&maxresults={max_cap}" if not container else f"{base}/{container}?restype=container&comp=list&maxresults={max_cap}"
+                resp = requests.get(url, timeout=8, verify=False)
+                if resp.status_code in (401, 403):
+                    export_payload = [{"error": "auth required"}]
+                elif resp.ok and "EnumerationResults" in resp.text:
+                    try:
+                        parsed = jxmlease.Parser()(resp.text)
+                        if not container:
+                            conts = parsed.get("EnumerationResults", {}).get("Containers", {}).get("Container", [])
+                            if isinstance(conts, dict):
+                                conts = [conts]
+                            export_payload = [{"container": c.get("Name")} for c in conts if isinstance(c, dict) and c.get("Name")]
+                        else:
+                            blobs = parsed.get("EnumerationResults", {}).get("Blobs", {}).get("Blob", [])
+                            if isinstance(blobs, dict):
+                                blobs = [blobs]
+                            export_payload = [{"blob": b.get("Name")} for b in blobs if isinstance(b, dict) and b.get("Name")][:max_cap]
+                            if not export_payload:
+                                export_payload = [{"message": "No blobs found"}]
+                    except Exception as exc:
+                        export_payload = [{"error": str(exc)}]
+                else:
+                    export_payload = [{"error": f"HTTP {resp.status_code}"}]
+            except Exception as exc:
+                export_payload = [{"error": str(exc)}]
+        elif type_lower == "gcsbucket":
+            host = getattr(obj, "bucket", "") or getattr(obj, "account", "") or obj.ip
+            prefix = _clean_name(sel_index) or ""
+            try:
+                max_cap = _limit_max(max_items, default=50, hard_max=200)
+                base = f"{_http_base(host, obj.port, scheme=getattr(obj, 'scheme', 'https') or 'https')}".rstrip("/")
+                url = f"{base}/"
+                if prefix:
+                    url = f"{base}/?prefix={prefix}&max-keys={max_cap}"
+                resp = requests.get(url, timeout=8, verify=False)
+                if resp.status_code in (401, 403):
+                    export_payload = [{"error": "auth required"}]
+                elif resp.ok and "ListBucketResult" in resp.text:
+                    try:
+                        parsed = jxmlease.Parser()(resp.text)
+                        contents = parsed.get("ListBucketResult", {}).get("Contents", [])
+                        if isinstance(contents, dict):
+                            contents = [contents]
+                        rows = []
+                        for idx, item in enumerate(contents):
+                            if idx >= max_cap:
+                                break
+                            if isinstance(item, dict) and item.get("Key"):
+                                rows.append({"object": item.get("Key")})
+                        export_payload = rows if rows else [{"message": "No objects found"}]
+                    except Exception as exc:
+                        export_payload = [{"error": str(exc)}]
+                else:
+                    export_payload = [{"error": f"HTTP {resp.status_code}"}]
+            except Exception as exc:
+                export_payload = [{"error": str(exc)}]
+        elif type_lower == "etcd":
+            base = _http_base(obj.ip, obj.port, scheme=getattr(obj, "scheme", "http") or "http")
+            prefix = _clean_name(sel_index) or ""
+            try:
+                resp = requests.get(f"{base}/v2/keys/{prefix}?recursive=true&sorted=true&limit={max_items}", timeout=8, verify=False)
+                if resp.status_code in (401, 403):
+                    export_payload = [{"error": "auth required"}]
+                elif resp.status_code == 404:
+                    payload = {"key": "", "range_end": "", "limit": max_items}
+                    v3 = requests.post(f"{base}/v3/kv/range", json=payload, timeout=8, verify=False)
+                    if v3.ok:
+                        data = []
+                        for kvs in v3.json().get("kvs", []) or []:
+                            k = kvs.get("key")
+                            v = kvs.get("value")
+                            if k:
+                                key_dec = base64.b64decode(k).decode(errors="ignore")
+                                val_dec = base64.b64decode(v).decode(errors="ignore") if v else ""
+                                data.append({"key": key_dec, "value": val_dec})
+                        export_payload = data
+                    else:
+                        export_payload = [{"error": f"HTTP {v3.status_code}"}]
+                elif resp.ok:
+                    data = []
+                    try:
+                        def _collect(node):
+                            if isinstance(node, dict):
+                                key = node.get("key")
+                                val = node.get("value")
+                                if key:
+                                    data.append({"key": key, "value": val})
+                                for child in node.get("nodes", []) or []:
+                                    _collect(child)
+                        _collect(resp.json().get("node", {}))
+                    except Exception:
+                        pass
+                    export_payload = data[:max_items]
+                else:
+                    export_payload = [{"error": f"HTTP {resp.status_code}"}]
+            except Exception as exc:
+                export_payload = [{"error": str(exc)}]
+        elif type_lower == "consul":
+            base = _http_base(obj.ip, obj.port, scheme=getattr(obj, "scheme", "http") or "http")
+            prefix = _clean_name(sel_index) or ""
+            try:
+                keys_url = f"{base}/v1/kv/{prefix}?keys&recurse&limit={max_items}" if prefix else f"{base}/v1/kv/?keys&limit={max_items}"
+                resp = requests.get(keys_url, timeout=8, verify=False)
+                if resp.status_code in (401, 403):
+                    export_payload = [{"error": "auth required"}]
+                elif resp.ok:
+                    data = []
+                    if isinstance(resp.json(), list):
+                        for k in resp.json()[:max_items]:
+                            data.append({"key": k})
+                    export_payload = data
+                else:
+                    export_payload = [{"error": f"HTTP {resp.status_code}"}]
+            except Exception as exc:
+                export_payload = [{"error": str(exc)}]
+        elif type_lower == "rabbitmq":
+            base = _http_base(obj.ip, obj.port, scheme=getattr(obj, "scheme", "http") or "http")
+            try:
+                qresp = requests.get(f"{base}/api/queues", timeout=8, verify=False)
+                if qresp.status_code in (401, 403):
+                    export_payload = [{"error": "auth required"}]
+                elif qresp.ok:
+                    data = []
+                    if isinstance(qresp.json(), list):
+                        cap = _limit_max(max_items, default=50, hard_max=500)
+                        for q in qresp.json()[:cap]:
+                            if isinstance(q, dict):
+                                data.append({"name": q.get("name"), "vhost": q.get("vhost"), "messages": q.get("messages")})
+                    export_payload = data
+                else:
+                    export_payload = [{"error": f"HTTP {qresp.status_code}"}]
+            except Exception as exc:
+                export_payload = [{"error": str(exc)}]
         else:
             export_payload = []
 
         file_info = _write_export_file(export_payload, fmt or "json")
         meta = {"type": type_lower, "download_token": file_info["token"], "filename": file_info["path"]}
-        self.update_state(state="SUCCESS", meta=meta)
+        self.update_state(state="SUCCESS", meta=_json_safe_meta(meta))
         raise Ignore()
     except Exception as exc:
-        self.update_state(state="FAILURE", meta={"error": str(exc)})
+        self.update_state(state="FAILURE", meta=_json_safe_meta({"error": str(exc)}))
         raise Ignore()
 
     if type.lower() == "mongo":
@@ -1869,7 +2733,7 @@ def monitor_periodic():
 
 
 @app.task
-def monitor(types, keyword="", network=""):
+def monitor(types, keyword="", network="", provider: str = "shodan"):
     def _normalize_types(raw_types):
         if isinstance(raw_types, (list, tuple)):
             collected = []
@@ -1888,10 +2752,11 @@ def monitor(types, keyword="", network=""):
     if not type_list:
         return {}
 
+    provider_lower = (provider or "shodan").lower()
     try:
-        client = get_shodan_client()
-    except ShodanClientError as exc:
-        logger.error("Unable to initialise Shodan client for monitor: %s", exc)
+        client = get_zoomeye_client() if provider_lower == "zoomeye" else get_shodan_client()
+    except (ShodanClientError, ZoomEyeClientError) as exc:
+        logger.error("Unable to initialise %s client for monitor: %s", provider_lower, exc)
         return {}
 
     config = get_config()
@@ -1899,29 +2764,40 @@ def monitor(types, keyword="", network=""):
 
     return_dict = {}
 
+    qmap = provider_queries(provider_lower)
+
     for monitor_type in type_list:
         type_lower = monitor_type.lower()
         return_dict[type_lower] = {"keyword": query_hint, "results": {}}
 
-        base_query = queries.get(type_lower, "")
+        base_query = qmap.get(type_lower, "")
         if not base_query and type_lower not in keys_all:
             logger.warning("Skipping unsupported monitor type %s", monitor_type)
             continue
 
-        search = Search(type=monitor_type, keyword=keyword, network=network)
+        search = Search(type=monitor_type, keyword=keyword, network=network, provider=provider_lower)
         search.save()
 
-        shodan_query = build_shodan_query(base_query, keyword=keyword, network=network)
+        final_query = build_provider_query(provider_lower, base_query, keyword=keyword, network=network)
         try:
-            response = client.host_search(shodan_query, page=1)
-        except ShodanClientError as exc:
-            logger.error("Shodan monitor query failed for %s: %s", monitor_type, exc)
+            if provider_lower == "zoomeye":
+                response = client.search(final_query, page=1, pagesize=1, sub_type=config['config'].get('ZOOMEYE_SUBTYPE', 'all'))
+                raw_matches = response.get('data', []) or []
+                matches = []
+                for m in raw_matches:
+                    norm = normalize_match(m)
+                    if not norm.get('ip_str'):
+                        continue
+                    matches.append(norm)
+            else:
+                response = client.host_search(final_query, page=1)
+                matches = response.get('matches', [])
+        except (ShodanClientError, ZoomEyeClientError) as exc:
+            logger.error("%s monitor query failed for %s: %s", provider_lower, monitor_type, exc)
             continue
         except Exception as exc:  # pragma: no cover
-            logger.exception("Unexpected error during Shodan monitor query for %s", monitor_type)
+            logger.exception("Unexpected error during %s monitor query for %s", provider_lower, monitor_type)
             continue
-
-        matches = response.get('matches', [])
 
         for c, match in enumerate(matches):
             if type_lower in keys_all:
@@ -1956,6 +2832,12 @@ def monitor(types, keyword="", network=""):
                 payload = check_cassandra(c, match, search, config=config)
             elif type_lower == 'rethink':
                 payload = check_rethink(c, match, search, config=config)
+            elif type_lower == 'etcd':
+                payload = check_etcd(c, match, search, config=config)
+            elif type_lower == 'consul':
+                payload = check_consul(c, match, search, config=config)
+            elif type_lower == 'rabbitmq':
+                payload = check_rabbitmq(c, match, search, config=config)
             else:
                 payload = {}
 
@@ -2105,12 +2987,414 @@ def check_cassandra(c, match, search, config):
             elif keyspace:
                 keyspaces.append(str(keyspace))
 
-    if keyspaces:
-        device = Cassandra(search=search, ip=ip, port=port, keyspaces=keyspaces)
-        device.save()
-        return_dict[c] = {"ip": ip, "port": port, 'keyspaces': keyspaces}
+    # Persist even when keyspaces are unknown so preview/export can still be attempted.
+    device = Cassandra(search=search, ip=ip, port=port, keyspaces=keyspaces)
+    device.save()
+    return_dict[c] = {"ip": ip, "port": port, 'keyspaces': keyspaces}
 
     return return_dict
+
+
+def check_etcd(c, match, search, config, active_probe: bool = False):
+    return_dict = {}
+    ip, port = extract_ip_port(match)
+    if Etcd.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
+        return return_dict
+
+    scheme_used = "http"
+    version = ""
+    status = ""
+    auth_required = False
+    keys_sample: List[str] = []
+
+    if not active_probe:
+        device = Etcd(search=search, ip=ip, port=port, scheme=scheme_used, version=version, status=status,
+                      keys_sample=json.dumps(keys_sample), auth_required=auth_required)
+        device.save()
+        return_dict[c] = {"ip": ip, "port": port, "auth_required": auth_required}
+        return return_dict
+
+    def _collect_keys(node) -> None:
+        if isinstance(node, dict):
+            key = node.get("key")
+            if key:
+                keys_sample.append(key)
+            for child in node.get("nodes", []) or []:
+                _collect_keys(child)
+
+    def _base(scheme: str) -> str:
+        return _http_base(ip, port, scheme=scheme)
+
+    # try http then https
+    for scheme in ("http", "https"):
+        try:
+            base = _base(scheme)
+            ver_resp = requests.get(f"{base}/version", timeout=4, verify=False)
+            if ver_resp.status_code in (401, 403):
+                auth_required = True
+                continue
+            if ver_resp.ok and isinstance(ver_resp.json(), dict):
+                version = ver_resp.json().get("etcdcluster", "") or ver_resp.json().get("etcdserver", "")
+                scheme_used = scheme
+            health_resp = requests.get(f"{base}/health", timeout=4, verify=False)
+            if health_resp.status_code in (401, 403):
+                auth_required = True
+            elif health_resp.ok:
+                status = str(health_resp.text or "")
+            # try v2 keys
+            try:
+                kv_resp = requests.get(f"{base}/v2/keys/?recursive=true&sorted=true&limit=50", timeout=5, verify=False)
+                if kv_resp.status_code in (401, 403):
+                    auth_required = True
+                elif kv_resp.status_code == 404:
+                    # try v3
+                    payload = {"key": "", "range_end": "", "limit": 50}
+                    v3 = requests.post(f"{base}/v3/kv/range", json=payload, timeout=5, verify=False)
+                    if v3.status_code in (401, 403):
+                        auth_required = True
+                    elif v3.ok:
+                        try:
+                            data = v3.json()
+                            for kv in data.get("kvs", []) or []:
+                                k = kv.get("key")
+                                if k:
+                                    keys_sample.append(base64.b64decode(k).decode(errors="ignore"))
+                        except Exception:
+                            pass
+                elif kv_resp.ok:
+                    try:
+                        data = kv_resp.json()
+                        _collect_keys(data.get("node", {}))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            break
+        except Exception:
+            continue
+
+    device = Etcd(search=search, ip=ip, port=port, scheme=scheme_used, version=version, status=status,
+                  keys_sample=json.dumps(keys_sample), auth_required=auth_required)
+    device.save()
+    return_dict[c] = {"ip": ip, "port": port, "version": version, "status": status, "keys": keys_sample,
+                      "auth_required": auth_required}
+    return return_dict
+
+
+def check_consul(c, match, search, config, active_probe: bool = False):
+    return_dict = {}
+    ip, port = extract_ip_port(match)
+    if ConsulKV.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
+        return return_dict
+
+    scheme_used = "http"
+    datacenters: List[str] = []
+    services: List[str] = []
+    kv_roots: List[str] = []
+    auth_required = False
+
+    if not active_probe:
+        device = ConsulKV(search=search, ip=ip, port=port, scheme=scheme_used,
+                          datacenters=json.dumps(datacenters), services=json.dumps(services),
+                          kv_roots=json.dumps(kv_roots), auth_required=auth_required)
+        device.save()
+        return_dict[c] = {"ip": ip, "port": port, "auth_required": auth_required}
+        return return_dict
+
+    for scheme in ("http", "https"):
+        base = _http_base(ip, port, scheme=scheme)
+        try:
+            dc_resp = requests.get(f"{base}/v1/catalog/datacenters", timeout=4, verify=False)
+            if dc_resp.status_code in (401, 403):
+                auth_required = True
+                continue
+            if dc_resp.ok and isinstance(dc_resp.json(), list):
+                datacenters = list(dc_resp.json()[:50])
+                scheme_used = scheme
+            svc_resp = requests.get(f"{base}/v1/catalog/services", timeout=4, verify=False)
+            if svc_resp.status_code in (401, 403):
+                auth_required = True
+            elif svc_resp.ok and isinstance(svc_resp.json(), dict):
+                services = list(svc_resp.json().keys())[:50]
+            kv_resp = requests.get(f"{base}/v1/kv/?keys&limit=50", timeout=5, verify=False)
+            if kv_resp.status_code in (401, 403):
+                auth_required = True
+            elif kv_resp.ok and isinstance(kv_resp.json(), list):
+                kv_roots = list(kv_resp.json()[:50])
+            break
+        except Exception:
+            continue
+
+    device = ConsulKV(search=search, ip=ip, port=port, scheme=scheme_used, datacenters=json.dumps(datacenters),
+                      services=json.dumps(services), kv_roots=json.dumps(kv_roots), auth_required=auth_required)
+    device.save()
+    return_dict[c] = {"ip": ip, "port": port, "datacenters": datacenters, "services": services,
+                      "kv_roots": kv_roots, "auth_required": auth_required}
+    return return_dict
+
+
+def check_rabbitmq(c, match, search, config, active_probe: bool = False):
+    return_dict = {}
+    ip, port = extract_ip_port(match)
+    if Rabbitmq.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
+        return return_dict
+
+    scheme_used = "http"
+    version = ""
+    vhosts: List[str] = []
+    queues: List[str] = []
+    auth_required = False
+
+    if not active_probe:
+        device = Rabbitmq(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
+                          vhosts=json.dumps(vhosts), queues=json.dumps(queues), auth_required=auth_required)
+        device.save()
+        return_dict[c] = {"ip": ip, "port": port, "auth_required": auth_required}
+        return return_dict
+
+    for scheme in ("http", "https"):
+        base = _http_base(ip, port, scheme=scheme)
+        try:
+            overview = requests.get(f"{base}/api/overview", timeout=4, verify=False)
+            if overview.status_code in (401, 403):
+                auth_required = True
+                continue
+            if overview.ok and isinstance(overview.json(), dict):
+                version = overview.json().get("rabbitmq_version", "") or overview.json().get("management_version", "")
+                scheme_used = scheme
+            vh = requests.get(f"{base}/api/vhosts", timeout=4, verify=False)
+            if vh.status_code in (401, 403):
+                auth_required = True
+            elif vh.ok and isinstance(vh.json(), list):
+                vhosts = [item.get("name", "") for item in vh.json() if item.get("name")] if isinstance(vh.json()[0], dict) else vh.json()[:50]
+            qresp = requests.get(f"{base}/api/queues", timeout=5, verify=False)
+            if qresp.status_code in (401, 403):
+                auth_required = True
+            elif qresp.ok and isinstance(qresp.json(), list):
+                for q in qresp.json()[:50]:
+                    if isinstance(q, dict) and q.get("name"):
+                        queues.append(q.get("name"))
+            break
+        except Exception:
+            continue
+
+    device = Rabbitmq(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
+                      vhosts=json.dumps(vhosts), queues=json.dumps(queues), auth_required=auth_required)
+    device.save()
+    return_dict[c] = {"ip": ip, "port": port, "version": version, "vhosts": vhosts, "queues": queues,
+                      "auth_required": auth_required}
+    return return_dict
+
+
+def _infer_host(match: Dict[str, Any]) -> str:
+    http_info = match.get("http") or {}
+    host_hdr = (http_info.get("host") or "").strip()
+    if host_hdr:
+        return host_hdr
+    return str(match.get("ip_str") or match.get("ip") or "")
+
+
+def check_azureblob(c, match, search, config, active_probe: bool = False):
+    return_dict = {}
+    ip, port = extract_ip_port(match)
+    host = _infer_host(match)
+    if AzureBlob.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
+        return return_dict
+
+    scheme_used = "https"
+    containers: List[str] = []
+    auth_required = False
+
+    if not active_probe:
+        device = AzureBlob(search=search, ip=ip, port=port, scheme=scheme_used, account=host,
+                           containers=json.dumps(containers), auth_required=auth_required)
+        device.save()
+        return_dict[c] = {"ip": ip, "port": port, "account": host, "auth_required": auth_required}
+        return return_dict
+
+    base = f"https://{host}"
+    try:
+        resp = requests.get(f"{base}/?comp=list&maxresults=50", timeout=8, verify=False)
+        if resp.status_code in (401, 403):
+            auth_required = True
+        elif resp.ok and "ListContainers" in resp.text:
+            try:
+                parsed = jxmlease.Parser()(resp.text)
+                conts = parsed.get("EnumerationResults", {}).get("Containers", {}).get("Container", [])
+                if isinstance(conts, dict):
+                    conts = [conts]
+                for container in conts[:50]:
+                    if isinstance(container, dict):
+                        name = container.get("Name")
+                        if name:
+                            containers.append(str(name))
+                    elif container:
+                        containers.append(str(container))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    device = AzureBlob(search=search, ip=ip, port=port, scheme=scheme_used, account=host,
+                       containers=json.dumps(containers), auth_required=auth_required)
+    device.save()
+    return_dict[c] = {"ip": ip, "port": port, "account": host, "containers": containers, "auth_required": auth_required}
+    return return_dict
+
+
+def check_gcsbucket(c, match, search, config, active_probe: bool = False):
+    return_dict = {}
+    ip, port = extract_ip_port(match)
+    host = _infer_host(match)
+    if GcsBucket.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
+        return return_dict
+
+    scheme_used = "https"
+    bucket_name = host
+    objects: List[str] = []
+    auth_required = False
+
+    if not active_probe:
+        device = GcsBucket(search=search, ip=ip, port=port, scheme=scheme_used, bucket=bucket_name,
+                           objects=json.dumps(objects), auth_required=auth_required)
+        device.save()
+        return_dict[c] = {"ip": ip, "port": port, "bucket": bucket_name, "auth_required": auth_required}
+        return return_dict
+
+    base = f"https://{host}"
+    try:
+        resp = requests.get(f"{base}/", timeout=8, verify=False)
+        if resp.status_code in (401, 403):
+            auth_required = True
+        elif resp.ok and "ListBucketResult" in resp.text:
+            try:
+                parsed = jxmlease.Parser()(resp.text)
+                contents = parsed.get("ListBucketResult", {}).get("Contents", [])
+                if isinstance(contents, dict):
+                    contents = [contents]
+                for idx, item in enumerate(contents):
+                    if idx >= 50:
+                        break
+                    if isinstance(item, dict):
+                        key_val = item.get("Key")
+                        if key_val:
+                            objects.append(str(key_val))
+                    elif item:
+                        objects.append(str(item))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    device = GcsBucket(search=search, ip=ip, port=port, scheme=scheme_used, bucket=bucket_name,
+                       objects_list=json.dumps(objects), auth_required=auth_required)
+    device.save()
+    return_dict[c] = {"ip": ip, "port": port, "bucket": bucket_name, "objects": objects, "auth_required": auth_required}
+    return return_dict
+
+
+def check_solr(c, match, search, config, active_probe: bool = False):
+    return_dict = {}
+    ip, port = extract_ip_port(match)
+    if Solr.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
+        return return_dict
+
+    scheme_used = "http"
+    version = ""
+    core_names: List[str] = []
+    auth_required = False
+
+    if not active_probe:
+        device = Solr(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
+                      core_count=None, cores=json.dumps(core_names), auth_required=auth_required)
+        device.save()
+        return_dict[c] = {"ip": ip, "port": port, "auth_required": auth_required}
+        return return_dict
+
+    for scheme in ("http", "https"):
+        base = _http_base(ip, port, scheme=scheme)
+        try:
+            cores_resp = requests.get(f"{base}/solr/admin/cores?action=STATUS&wt=json", timeout=6, verify=False)
+            if cores_resp.status_code in (401, 403):
+                auth_required = True
+                continue
+            if cores_resp.ok and isinstance(cores_resp.json(), dict):
+                status = cores_resp.json().get("status", {})
+                if isinstance(status, dict):
+                    for name in list(status.keys())[:50]:
+                        core_names.append(name)
+                version = cores_resp.headers.get("X-Solr-Version", "") or cores_resp.json().get("responseHeader", {}).get("server", "")
+                scheme_used = scheme
+                break
+        except Exception:
+            continue
+
+    device = Solr(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
+                  core_count=len(core_names) if core_names else None, cores=json.dumps(core_names), auth_required=auth_required)
+    device.save()
+    return_dict[c] = {"ip": ip, "port": port, "cores": core_names, "version": version, "auth_required": auth_required}
+    return return_dict
+
+
+def check_gitea(c, match, search, config, active_probe: bool = False, product_hint: str = "gitea"):
+    return_dict = {}
+    ip, port = extract_ip_port(match)
+    Model = Gitea if product_hint == "gitea" else Gogs
+    if Model.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
+        return return_dict
+
+    scheme_used = "http"
+    version = ""
+    repos: List[str] = []
+    users: List[str] = []
+    auth_required = False
+
+    if not active_probe:
+        device = Model(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
+                       repos=json.dumps(repos), users=json.dumps(users), auth_required=auth_required)
+        device.save()
+        return_dict[c] = {"ip": ip, "port": port, "auth_required": auth_required}
+        return return_dict
+
+    for scheme in ("http", "https"):
+        base = _http_base(ip, port, scheme=scheme)
+        try:
+            root = requests.get(base, timeout=6, verify=False)
+            if root.status_code in (401, 403):
+                auth_required = True
+            if root.ok:
+                scheme_used = scheme
+                # Best effort parse version from headers or body
+                version = root.headers.get("Server", "") or ""
+            # Repos search
+            repo_resp = requests.get(f"{base}/api/v1/repos/search?limit=50", timeout=6, verify=False)
+            if repo_resp.status_code in (401, 403):
+                auth_required = True
+            elif repo_resp.ok and isinstance(repo_resp.json(), dict):
+                data = repo_resp.json().get("data", []) or repo_resp.json().get("repos", [])
+                for r in data:
+                    if isinstance(r, dict) and r.get("full_name"):
+                        repos.append(r.get("full_name"))
+            # Users search
+            user_resp = requests.get(f"{base}/api/v1/users/search?limit=50", timeout=6, verify=False)
+            if user_resp.status_code in (401, 403):
+                auth_required = True
+            elif user_resp.ok and isinstance(user_resp.json(), dict):
+                data = user_resp.json().get("data", []) or user_resp.json().get("users", [])
+                for u in data:
+                    if isinstance(u, dict) and u.get("username"):
+                        users.append(u.get("username"))
+            break
+        except Exception:
+            continue
+
+    device = Model(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
+                   repos=json.dumps(repos), users=json.dumps(users), auth_required=auth_required)
+    device.save()
+    return_dict[c] = {"ip": ip, "port": port, "version": version, "repos": repos, "users": users,
+                      "auth_required": auth_required}
+    return return_dict
+
 
 
 def check_ftp(c, match, search, keyword, config):

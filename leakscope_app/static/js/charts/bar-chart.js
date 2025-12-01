@@ -1,8 +1,18 @@
-function drawCharts (labels,data) {
- "use strict";
-	 /*----------------------------------------*/
-	/*  1.  Bar Chart
-	/*----------------------------------------*/
+function drawCharts(labels, data, shodanData, zoomeyeData) {
+    "use strict";
+    if (!Array.isArray(labels)) labels = [];
+    if (!Array.isArray(data)) data = [];
+    if (!Array.isArray(shodanData)) shodanData = [];
+    if (!Array.isArray(zoomeyeData)) zoomeyeData = [];
+
+    // Fallback when nothing to plot.
+    if (!labels.length) {
+        labels = ['No data'];
+        data = [0];
+        shodanData = [];
+        zoomeyeData = [];
+    }
+
     if (Chart && Chart.defaults && Chart.defaults.global) {
         Chart.defaults.global.defaultFontColor = '#cbd5e1';
         Chart.defaults.global.defaultFontFamily = "'Roboto', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif";
@@ -15,11 +25,6 @@ function drawCharts (labels,data) {
         '#E879F9', '#2DD4BF', '#FBBF24', '#F59E0B'
     ];
     var bgColors = labels.map(function(_, idx){
-        var hex = palette[idx % palette.length];
-        return hex.replace('#', 'rgba(')  // simple hex to rgba fallback
-    });
-    // simple hex -> rgba conversion
-    bgColors = labels.map(function(_, idx){
         var hex = palette[idx % palette.length];
         var bigint = parseInt(hex.slice(1), 16);
         var r = (bigint >> 16) & 255;
@@ -36,224 +41,74 @@ function drawCharts (labels,data) {
         return 'rgba(' + r + ',' + g + ',' + b + ',1)';
     });
 
-	var ctx = document.getElementById("barchart1");
-	var barchart1 = new Chart(ctx, {
-		type: 'bar',
-		data: {
-			labels: labels,
-			datasets: [{
-				label: 'Amount',
-				data: data,
-				backgroundColor: bgColors,
-				borderColor: borderColors,
-				borderWidth: 1.5
-			}]
-		},
-		options: {
-			scales: {
-				yAxes: [{
-					ticks: {
-						beginAtZero:true,
-						fontColor: '#cbd5e1'
-					},
-					gridLines: {
-						color: 'rgba(148, 163, 184, 0.2)'
-					}
-				}],
-				xAxes: [{
-					ticks: {
-						fontColor: '#cbd5e1'
-					},
-					gridLines: {
-						color: 'rgba(148, 163, 184, 0.2)'
-					}
-				}]
-			},
-			legend: {
-				labels: { fontColor: '#e5e7eb' }
-			},
-			tooltips: {
-				backgroundColor: '#111827',
-				titleFontColor: '#e5e7eb',
-				bodyFontColor: '#e5e7eb',
-				borderColor: '#334155',
-				borderWidth: 1
-			}
-		}
-	});
-	/*----------------------------------------*/
-	/*  2.  Bar Chart vertical
-	/*----------------------------------------*/
-	var ctx = document.getElementById("barchart2");
-	var barchart2 = new Chart(ctx, {
-		type: 'bar',
-		data: {
-			labels: ["January", "February"],
-			datasets: [{
-                label: 'Dataset 1',
-				data: [150, 170],
-				borderWidth: 1,
-                backgroundColor: [
-					'rgba(255, 99, 132, 0.2)',
-					'rgb(50,205,50, 0.2)'
-				],
-				borderColor: [
-					'rgba(255,99,132,1)',
-					'rgba(54, 162, 235, 1)'
-				],
-            }, {
-                label: 'Dataset 2',
-				data: [-188, -177],
-                backgroundColor: [
-					'rgba(255, 99, 132, 0.2)',
-					'rgb(50,205,50, 0.2)'
-				],
-				borderColor: [
-					'rgba(255,99,132,1)',
-					'rgba(54, 162, 235, 1)'
-				],
-				borderWidth: 1
-            }]
-		},
-		options: {
-			responsive: true,
-			legend: {
-				position: 'top',
-			},
-			title: {
-				display: true,
-				text: 'Bar Chart Vertical'
-			}
-		}
-	});
-	/*----------------------------------------*/
-	/*  3.  Bar Chart Horizontal
-	/*----------------------------------------*/
-	var ctx = document.getElementById("barchart3");
-	var barchart3 = new Chart(ctx, {
-		type: 'horizontalBar',
-		data: {
-			labels: ["May", "June"],
-			datasets: [{
-                label: 'Dataset 1',
-				data: [3, 9],
-				borderWidth: 1,
-                backgroundColor: [
-					'rgba(255, 99, 132, 0.2)',
-					'rgb(50,205,50, 0.2)'
-				],
-				borderColor: [
-					'rgba(255,99,132,1)',
-					'rgba(54, 162, 235, 1)'
-				],
-            }, {
-                label: 'Dataset 2',
-				data: [-9, -15],
-                backgroundColor: [
-					'rgba(255, 99, 132, 0.2)',
-					'rgb(50,205,50, 0.2)'
-				],
-				borderColor: [
-					'rgba(255,99,132,1)',
-					'rgba(54, 162, 235, 1)'
-				],
-				borderWidth: 1
-            }]
-		},
-		options: {
-			responsive: true,
-			legend: {
-				position: 'top',
-			},
-			title: {
-				display: true,
-				text: 'Bar Chart horizontal'
-			}
-		}
-	});
-	
-	/*----------------------------------------*/
-	/*  4.  Bar Chart Multi axis
-	/*----------------------------------------*/
-	var ctx = document.getElementById("barchart4");
-	var barchart4 = new Chart(ctx, {
-		type: 'bar',
-		data: {
-			labels: ["March", "April"],
-			datasets: [{
-                label: 'Dataset 1',
-				data: [12, 19, 3, 5, 2, 3, 9],
-				borderWidth: 1,
-				yAxisID: "y-axis-1",
-                backgroundColor: [
-					'rgba(255, 99, 132, 0.2)',
-					'rgb(50,205,50, 0.2)',
-					'rgba(255, 206, 86, 0.2)',
-					'rgba(75, 192, 192, 0.2)',
-					'rgba(153, 102, 255, 0.2)',
-					'rgba(255, 159, 64, 0.2)'
-				],
-				borderColor: [
-					'rgba(255,99,132,1)',
-					'rgba(54, 162, 235, 1)',
-					'rgba(255, 206, 86, 1)',
-					'rgba(75, 192, 192, 1)',
-					'rgba(153, 102, 255, 1)',
-					'rgba(255, 159, 64, 1)'
-				],
-            }, {
-                label: 'Dataset 2',
-				data: [-3, -6, -5, -9, -15, -20],
-				borderWidth: 1,
-				yAxisID: "y-axis-2",
-                backgroundColor: [
-					'rgba(255, 99, 132, 0.2)',
-					'rgb(50,205,50, 0.2)',
-					'rgba(255, 206, 86, 0.2)',
-					'rgba(75, 192, 192, 0.2)',
-					'rgba(153, 102, 255, 0.2)',
-					'rgba(255, 159, 64, 0.2)'
-				],
-				borderColor: [
-					'rgba(255,99,132,1)',
-					'rgba(54, 162, 235, 1)',
-					'rgba(255, 206, 86, 1)',
-					'rgba(75, 192, 192, 1)',
-					'rgba(153, 102, 255, 1)',
-					'rgba(255, 159, 64, 1)'
-				],
-				
-            }]
-		},
-		options: {
-			responsive: true,
-			title:{
-				display:true,
-				text:"Bar Chart Multi Axis"
-			},
-			tooltips: {
-				mode: 'index',
-				intersect: true
-			},
-			scales: {
-				yAxes: [{
-					type: "linear",
-					display: true,
-					position: "left",
-					id: "y-axis-1",
-				}, {
-					type: "linear",
-					display: true,
-					position: "right",
-					id: "y-axis-2",
-					gridLines: {
-						drawOnChartArea: false
-					}
-				}],
-			}
-		}
-	});
-	
-	
-		
-}(jQuery);
+    var ctx = document.getElementById("barchart1");
+    if (!ctx) { return; }
+    var datasets = [];
+    var shodanSum = shodanData.reduce(function(a,b){ return a + (Number(b)||0); }, 0);
+    var zoomeyeSum = zoomeyeData.reduce(function(a,b){ return a + (Number(b)||0); }, 0);
+    // If Shodan is empty but aggregate data exists, use aggregate for Shodan.
+    var shodanSeries = shodanData.length ? shodanData : labels.map(() => 0);
+    if (shodanSum === 0 && data.length) {
+        shodanSeries = data;
+        shodanSum = shodanSeries.reduce(function(a,b){ return a + (Number(b)||0); }, 0);
+    }
+    var zoomeyeSeries = zoomeyeData.length ? zoomeyeData : labels.map(() => 0);
+
+    datasets.push({
+        label: 'Shodan',
+        data: shodanSeries,
+        backgroundColor: 'rgba(96,165,250,0.85)',
+        borderColor: 'rgba(59,130,246,1)',
+        borderWidth: 1.5,
+        stack: 'providers'
+    });
+    datasets.push({
+        label: 'ZoomEye',
+        data: zoomeyeSeries,
+        backgroundColor: 'rgba(248,113,113,0.85)',
+        borderColor: 'rgba(239,68,68,1)',
+        borderWidth: 1.5,
+        stack: 'providers'
+    });
+
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            scales: {
+                yAxes: [{
+                    ticks: {
+                        beginAtZero:true,
+                        fontColor: '#cbd5e1'
+                    },
+                    gridLines: {
+                        color: 'rgba(148, 163, 184, 0.2)'
+                    },
+                    stacked: true
+                }],
+                xAxes: [{
+                    ticks: {
+                        fontColor: '#cbd5e1'
+                    },
+                    gridLines: {
+                        color: 'rgba(148, 163, 184, 0.2)'
+                    },
+                    stacked: true
+                }]
+            },
+            legend: {
+                labels: { fontColor: '#e5e7eb' }
+            },
+            tooltips: {
+                backgroundColor: '#111827',
+                titleFontColor: '#e5e7eb',
+                bodyFontColor: '#e5e7eb',
+                borderColor: '#334155',
+                borderWidth: 1
+            }
+        }
+    });
+}

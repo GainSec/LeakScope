@@ -1,4 +1,6 @@
 from django.db import models
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
 
 
 # Create your models here.
@@ -9,6 +11,7 @@ class Search(models.Model):
     keyword = models.CharField(max_length=100)
     network = models.CharField(max_length=100)
     country = models.CharField(max_length=100)
+    provider = models.CharField(max_length=20, default="shodan")
     created_on = models.DateTimeField(auto_now_add=True)
 
 
@@ -18,6 +21,7 @@ class CustomQuery(models.Model):
     query_template = models.TextField()
     default_type = models.CharField(max_length=100, blank=True, default="")
     active_probe_default = models.BooleanField(default=False)
+    provider = models.CharField(max_length=20, default="shodan")
     created_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)
     last_run_at = models.DateTimeField(null=True, blank=True)
@@ -29,6 +33,7 @@ class CustomQuery(models.Model):
 
 class Gitlab(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     url = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
@@ -37,6 +42,7 @@ class Gitlab(models.Model):
 
 class Ftp(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     url = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
@@ -48,6 +54,7 @@ class Ftp(models.Model):
 
 class Elastic(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     name = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
@@ -60,6 +67,7 @@ class Elastic(models.Model):
 
 class Keys(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -68,6 +76,7 @@ class Keys(models.Model):
 
 class Amazonbe(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -76,11 +85,13 @@ class Amazonbe(models.Model):
 
 class AmazonBuckets(models.Model):
     bucket = models.CharField(max_length=1000)
+    provider = models.CharField(max_length=20, default="shodan")
     confirmed = models.BooleanField(default=False)
     for_later = models.BooleanField(default=False)
 
 class Github(models.Model):
     commit = models.CharField(max_length=1000)
+    provider = models.CharField(max_length=20, default="shodan")
     path = models.CharField(max_length=1000)
     secret = models.CharField(max_length=10000)
     confirmed = models.BooleanField(default=False)
@@ -89,6 +100,7 @@ class Github(models.Model):
 
 class Javascript(models.Model):
     secrets = models.CharField(max_length=1000)
+    provider = models.CharField(max_length=20, default="shodan")
     path = models.CharField(max_length=10000)
     context = models.CharField(max_length=10000)
     confirmed = models.BooleanField(default=False)
@@ -97,6 +109,7 @@ class Javascript(models.Model):
 
 class Dirs(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -107,6 +120,7 @@ class Dirs(models.Model):
 
 class Jenkins(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -117,6 +131,7 @@ class Jenkins(models.Model):
 
 class Amazons3be(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -127,6 +142,7 @@ class Amazons3be(models.Model):
 
 class Mongo(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -138,6 +154,7 @@ class Mongo(models.Model):
 
 class Rsync(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -146,6 +163,7 @@ class Rsync(models.Model):
 
 class Sonarqube(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -154,6 +172,7 @@ class Sonarqube(models.Model):
 
 class Couchdb(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -161,6 +180,7 @@ class Couchdb(models.Model):
 
 class Kibana(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -168,6 +188,7 @@ class Kibana(models.Model):
 
 class Cassandra(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     keyspaces = models.CharField(max_length=10000)
@@ -176,6 +197,7 @@ class Cassandra(models.Model):
 
 class Rethink(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     databases = models.CharField(max_length=10000)
@@ -190,6 +212,7 @@ class Monitor(models.Model):
 
 class Angular(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -200,6 +223,7 @@ class Angular(models.Model):
 
 class OpenSearch(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -211,6 +235,7 @@ class OpenSearch(models.Model):
 
 class Grafana(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -221,6 +246,7 @@ class Grafana(models.Model):
 
 class Prometheus(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -231,6 +257,7 @@ class Prometheus(models.Model):
 
 class Minio(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -242,6 +269,7 @@ class Minio(models.Model):
 
 class Swagger(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -252,6 +280,7 @@ class Swagger(models.Model):
 
 class MongoExpress(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -262,6 +291,7 @@ class MongoExpress(models.Model):
 
 class Nexus(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -276,6 +306,7 @@ class Nexus(models.Model):
 
 class Artifactory(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -290,6 +321,7 @@ class Artifactory(models.Model):
 
 class Registry(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
     ip = models.CharField(max_length=100)
     port = models.CharField(max_length=100)
     confirmed = models.BooleanField(default=False)
@@ -303,6 +335,126 @@ class Registry(models.Model):
     repo_count = models.IntegerField(null=True, blank=True)
     repos = models.TextField(null=True, blank=True)
     last_seen = models.DateTimeField(auto_now=True)
+
+
+class Solr(models.Model):
+    search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
+    ip = models.CharField(max_length=100)
+    port = models.CharField(max_length=100, default="", blank=True)
+    scheme = models.CharField(max_length=10, default="http", blank=True)
+    confirmed = models.BooleanField(default=False)
+    for_later = models.BooleanField(default=False)
+    core_count = models.IntegerField(null=True, blank=True)
+    cores = models.TextField(null=True, blank=True)
+    version = models.CharField(max_length=200, null=True, blank=True)
+    indicator = models.CharField(max_length=10000, default="", blank=True)
+    auth_required = models.BooleanField(default=False)
+
+
+class Gitea(models.Model):
+    search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
+    ip = models.CharField(max_length=100)
+    port = models.CharField(max_length=100, default="", blank=True)
+    scheme = models.CharField(max_length=10, default="http", blank=True)
+    confirmed = models.BooleanField(default=False)
+    for_later = models.BooleanField(default=False)
+    url = models.CharField(max_length=1000, null=True, blank=True)
+    version = models.CharField(max_length=200, null=True, blank=True)
+    repos = models.TextField(null=True, blank=True)
+    users = models.TextField(null=True, blank=True)
+    indicator = models.CharField(max_length=10000, default="", blank=True)
+    auth_required = models.BooleanField(default=False)
+
+
+class Gogs(models.Model):
+    search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
+    ip = models.CharField(max_length=100)
+    port = models.CharField(max_length=100, default="", blank=True)
+    scheme = models.CharField(max_length=10, default="http", blank=True)
+    confirmed = models.BooleanField(default=False)
+    for_later = models.BooleanField(default=False)
+    url = models.CharField(max_length=1000, null=True, blank=True)
+    version = models.CharField(max_length=200, null=True, blank=True)
+    repos = models.TextField(null=True, blank=True)
+    users = models.TextField(null=True, blank=True)
+    indicator = models.CharField(max_length=10000, default="", blank=True)
+    auth_required = models.BooleanField(default=False)
+
+
+class Etcd(models.Model):
+    search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
+    ip = models.CharField(max_length=100)
+    port = models.CharField(max_length=100, default="", blank=True)
+    scheme = models.CharField(max_length=10, default="http", blank=True)
+    confirmed = models.BooleanField(default=False)
+    for_later = models.BooleanField(default=False)
+    version = models.CharField(max_length=255, default="", blank=True)
+    status = models.CharField(max_length=255, default="", blank=True)
+    keys_sample = models.CharField(max_length=20000, default="", blank=True)
+    indicator = models.CharField(max_length=10000, default="", blank=True)
+    auth_required = models.BooleanField(default=False)
+
+
+class ConsulKV(models.Model):
+    search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
+    ip = models.CharField(max_length=100)
+    port = models.CharField(max_length=100, default="", blank=True)
+    scheme = models.CharField(max_length=10, default="http", blank=True)
+    confirmed = models.BooleanField(default=False)
+    for_later = models.BooleanField(default=False)
+    datacenters = models.CharField(max_length=5000, default="", blank=True)
+    services = models.CharField(max_length=5000, default="", blank=True)
+    kv_roots = models.CharField(max_length=5000, default="", blank=True)
+    indicator = models.CharField(max_length=10000, default="", blank=True)
+    auth_required = models.BooleanField(default=False)
+
+
+class Rabbitmq(models.Model):
+    search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
+    ip = models.CharField(max_length=100)
+    port = models.CharField(max_length=100, default="", blank=True)
+    scheme = models.CharField(max_length=10, default="http", blank=True)
+    confirmed = models.BooleanField(default=False)
+    for_later = models.BooleanField(default=False)
+    version = models.CharField(max_length=255, default="", blank=True)
+    vhosts = models.CharField(max_length=5000, default="", blank=True)
+    queues = models.CharField(max_length=5000, default="", blank=True)
+    indicator = models.CharField(max_length=10000, default="", blank=True)
+    auth_required = models.BooleanField(default=False)
+
+
+class AzureBlob(models.Model):
+    search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
+    ip = models.CharField(max_length=100)
+    port = models.CharField(max_length=100, default="", blank=True)
+    scheme = models.CharField(max_length=10, default="http", blank=True)
+    confirmed = models.BooleanField(default=False)
+    for_later = models.BooleanField(default=False)
+    account = models.CharField(max_length=500, default="", blank=True)
+    containers = models.TextField(blank=True, null=True)
+    indicator = models.CharField(max_length=10000, default="", blank=True)
+    auth_required = models.BooleanField(default=False)
+
+
+class GcsBucket(models.Model):
+    search = models.ForeignKey(Search, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=20, default="shodan")
+    ip = models.CharField(max_length=100)
+    port = models.CharField(max_length=100, default="", blank=True)
+    scheme = models.CharField(max_length=10, default="http", blank=True)
+    confirmed = models.BooleanField(default=False)
+    for_later = models.BooleanField(default=False)
+    bucket = models.CharField(max_length=500, default="", blank=True)
+    objects_list = models.TextField(blank=True, null=True)
+    indicator = models.CharField(max_length=10000, default="", blank=True)
+    auth_required = models.BooleanField(default=False)
 
 
 class BlacklistEntry(models.Model):
@@ -319,3 +471,17 @@ class FingerprintLog(models.Model):
     last_seen = models.DateTimeField(auto_now=True)
     seen_count = models.PositiveIntegerField(default=1)
     status = models.CharField(max_length=20, default="new")
+
+
+@receiver(pre_save)
+def ensure_provider(sender, instance, **kwargs):
+    """
+    Best-effort: if a model has both `provider` and `search`, default provider from the search when missing.
+    """
+    try:
+        if hasattr(instance, "provider") and hasattr(instance, "search"):
+            if not getattr(instance, "provider", "") and getattr(instance, "search", None):
+                instance.provider = getattr(instance.search, "provider", "shodan") or "shodan"
+    except Exception:
+        # Do not block saves on errors here.
+        pass

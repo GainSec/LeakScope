@@ -123,6 +123,14 @@
                                 <label>Collection (Mongo)</label>
                                 <input type="text" id="export_collection" class="form-control" placeholder="collection (optional)">
                             </div>
+                            <div class="col-lg-3 col-md-3 col-sm-6">
+                                <label>Keyspace (Cassandra)</label>
+                                <input type="text" id="export_keyspace" class="form-control" placeholder="keyspace (optional)">
+                            </div>
+                            <div class="col-lg-3 col-md-3 col-sm-6">
+                                <label>Table (Cassandra)</label>
+                                <input type="text" id="export_table" class="form-control" placeholder="table (optional)">
+                            </div>
                             <div class="col-lg-2 col-md-2 col-sm-6">
                                 <label>Max items</label>
                                 <input type="number" id="export_max" class="form-control" value="1000" min="1" max="5000">
@@ -314,6 +322,8 @@
                     index: $('#export_index').val(),
                     db: $('#export_index').val(),
                     collection: $('#export_collection').val(),
+                    keyspace: $('#export_keyspace').val(),
+                    table: $('#export_table').val(),
                     max_items: $('#export_max').val(),
                     format: $('#export_format').val(),
                     active_probe: active

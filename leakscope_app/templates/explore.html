@@ -108,6 +108,10 @@
                 <label>Keyspace/DB</label>
                 <select id="field_keyspace" class="form-control"></select>
             </div>
+            <div class="col-lg-3 col-md-4 col-sm-6" id="col_table">
+                <label>Table</label>
+                <select id="field_table" class="form-control"></select>
+            </div>
         </div>
         <div class="row">
             <div class="col-lg-3 col-md-4 col-sm-6" id="col_filter">
@@ -181,7 +185,7 @@ const typeConfig = {
     jenkins: ['filter','max_items','format'],
     ftp: ['filter','max_items','format'],
     rsync: ['filter','max_items','format'],
-    cassandra: ['keyspace','filter','format'],
+    cassandra: ['keyspace','table','filter','max_items','format'],
     rethink: ['index_db','filter','format'],
     javascript: ['filter','max_items','format'],
     github: ['filter','max_items','format'],
@@ -204,6 +208,7 @@ function showControlsForType(type){
     show('col_repo', cfg.includes('repo'));
     show('col_bucket', cfg.includes('bucket'));
     show('col_keyspace', cfg.includes('keyspace'));
+    show('col_table', cfg.includes('table'));
     show('col_filter', cfg.includes('filter'));
     show('col_max_items', cfg.includes('max_items'));
     show('col_max_repos', cfg.includes('max_repos'));
@@ -223,6 +228,7 @@ function renderOptions(type, opts){
     fill('#field_repo', opts.repos || [], 'Select repo');
     fill('#field_bucket', opts.buckets || [], 'Select bucket');
     fill('#field_keyspace', opts.keyspaces || [], 'Select keyspace');
+    fill('#field_table', opts.tables || [], 'Select table');
 }
 
 function renderResults(obj){
@@ -259,6 +265,7 @@ function gatherSelection(type){
         repo: $('#field_repo').val(),
         bucket: $('#field_bucket').val(),
         keyspace: $('#field_keyspace').val(),
+        table: $('#field_table').val(),
         filter: $('#field_filter').val(),
         max_items: $('#field_max_items').val(),
         max_repos: $('#field_max_repos').val(),

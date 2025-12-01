@@ -14,6 +14,7 @@ idna==2.9
 importlib-metadata==1.5.0
 kombu==4.6.8
 shodan
+zoomeye
 pytz==2019.3
 redis==3.4.1
 requests==2.23.0
@@ -27,3 +28,4 @@ jsbeautifier==1.14.11
 jxmlease
 gunicorn==20.1.0
 pymongo==4.6.3
+cassandra-driver==3.29.1

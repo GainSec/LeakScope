@@ -78,7 +78,7 @@
                 <div style="margin-bottom:10px; font-size:13px;">
                     <button class="btn btn-xs btn-default" type="button" id="toggle-filters" title="Filters narrow your search (e.g., port, product, country). Click to browse and insert filter tokens.">Show filters</button>
                     <button class="btn btn-xs btn-default" type="button" id="toggle-facets" title="Facets summarize and aggregate results (e.g., top ports/services). Click to browse and insert facet tokens.">Show facets</button>
-                    <div id="filters-list" style="display:none; margin-top:6px; max-height:140px; overflow-y:auto;">
+                    <div id="filters-list" class="filters-shodan" style="display:none; margin-top:6px; max-height:140px; overflow-y:auto;">
                         {% if filters %}
                             {% for f in filters %}
                                 <span class="label label-default helper-chip add-filter" data-token="{{ f }}">{{ f }}</span>
@@ -87,9 +87,27 @@
                             <span>Unavailable</span>
                         {% endif %}
                     </div>
-                    <div id="facets-list" style="display:none; margin-top:6px; max-height:140px; overflow-y:auto;">
+                    <div id="facets-list" class="facets-shodan" style="display:none; margin-top:6px; max-height:140px; overflow-y:auto;">
                         {% if facets %}
                             {% for f in facets %}
+                                <span class="label label-default helper-chip add-facet" data-token="{{ f }}">{{ f }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span>Unavailable</span>
+                        {% endif %}
+                    </div>
+                    <div id="filters-list-zoomeye" class="filters-zoomeye" style="display:none; margin-top:6px; max-height:140px; overflow-y:auto;">
+                        {% if zoomeye_filters %}
+                            {% for f in zoomeye_filters %}
+                                <span class="label label-default helper-chip add-filter" data-token="{{ f }}">{{ f }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span>Unavailable</span>
+                        {% endif %}
+                    </div>
+                    <div id="facets-list-zoomeye" class="facets-zoomeye" style="display:none; margin-top:6px; max-height:140px; overflow-y:auto;">
+                        {% if zoomeye_facets %}
+                            {% for f in zoomeye_facets %}
                                 <span class="label label-default helper-chip add-facet" data-token="{{ f }}">{{ f }}</span>
                             {% endfor %}
                         {% else %}
@@ -107,6 +125,11 @@
                     <div class="form-group">
                         <label>Description</label>
                         <textarea class="form-control" id="query_description" rows="2" placeholder="Optional notes"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Provider</label><br>
+                        <label style="margin-right:10px;"><input type="radio" name="provider" value="shodan" checked> Shodan</label>
+                        <label><input type="radio" name="provider" value="zoomeye"> ZoomEye</label>
                     </div>
                     <div class="form-group">
                         <label>Query Template</label>
@@ -175,8 +198,17 @@
                             <input class="form-control" id="run_exclude" placeholder="Exclude (comma-separated)">
                         </div>
                         <div class="col-lg-1 col-md-1 col-sm-6">
-                            <label for="run_page" style="color:#fff;">Pages</label>
+                            <label for="run_page" style="color:#fff;">Start page</label>
                             <input class="form-control" id="run_page" type="number" value="1" min="1">
+                        </div>
+                        <div class="col-lg-1 col-md-1 col-sm-6">
+                            <label for="run_page_count" style="color:#fff;">Pages</label>
+                            <input class="form-control" id="run_page_count" type="number" value="1" min="1">
+                        </div>
+                        <div class="col-lg-3 col-md-3 col-sm-6">
+                            <label style="color:#fff; display:block;">Provider</label>
+                            <label style="color:#fff; margin-right:10px;"><input type="radio" name="provider" value="shodan" checked> Shodan</label>
+                            <label style="color:#fff;"><input type="radio" name="provider" value="zoomeye"> ZoomEye</label>
                         </div>
                         <div class="col-lg-1 col-md-1 col-sm-6">
                             <div class="checkbox-nk" style="margin-top:8px;">
@@ -188,7 +220,7 @@
                         </div>
                     </div>
                     <div id="custom-shodan-credit" style="display:none; margin-top:10px; color:#fbbf24; font-weight:bold;">
-                        Shodan API Credits Used: <span id="custom-shodan-credit-count">1</span>
+                        <span id="custom-credit-provider">Shodan</span> API Credits Used: <span id="custom-shodan-credit-count">1</span>
                     </div>
                     <div class="form-group" style="margin-top:10px;">
                         <button class="btn btn-info" id="run_query_btn" disabled>Run</button>
@@ -229,10 +261,16 @@
     <script src="{% static 'js/celery_progress.js' %}"></script>
     <script>
         var baseQueries = {};
+        var baseQueriesZoomEye = {};
         try {
             baseQueries = JSON.parse('{{ base_queries_json|escapejs }}');
         } catch (e) {
             baseQueries = {};
+        }
+        try {
+            baseQueriesZoomEye = JSON.parse('{{ base_queries_zoomeye_json|escapejs }}');
+        } catch (e) {
+            baseQueriesZoomEye = {};
         }
         var selectedQuery = null;
         function addTokenToTemplate(token) {
@@ -328,36 +366,66 @@
         }
 
         function refreshCustomCredits() {
-            var pages = parseInt($('#run_page').val(), 10);
+            var pages = parseInt($("#run_page").val(), 10);
             if (isNaN(pages) || pages < 1) {
                 pages = 1;
                 $('#run_page').val(1);
             }
-            if (pages > 1) {
-                $('#custom-shodan-credit-count').text(pages);
+            var pageCount = parseInt($("#run_page_count").val(), 10);
+            if (isNaN(pageCount) || pageCount < 1) {
+                pageCount = 1;
+                $('#run_page_count').val(1);
+            }
+            var provider = ($('input[name=provider]:checked').val() || 'shodan').toLowerCase();
+            $('#custom-credit-provider').text(provider === 'zoomeye' ? 'ZoomEye' : 'Shodan');
+            // ZoomEye only charges when results > 0; keep banner for awareness but default to 1 page.
+            $('#custom-shodan-credit-count').text(pageCount);
+            if (provider === 'zoomeye') {
+                $('#custom-shodan-credit').show();
+            } else if (pageCount > 1) {
                 $('#custom-shodan-credit').show();
             } else {
                 $('#custom-shodan-credit').hide();
             }
         }
 
-        $(document).ready(function() {
+$(document).ready(function() {
             loadQueries();
             refreshCustomCredits();
 
             $('#toggle-filters').click(function() {
-                $('#filters-list').toggle();
-                $(this).text($('#filters-list').is(':visible') ? 'Hide filters' : 'Show filters');
+                var provider = ($('input[name=provider]:checked').val() || 'shodan').toLowerCase();
+                var $shodanFilters = $('#filters-list');
+                var $zoomeyeFilters = $('#filters-list-zoomeye');
+                if (provider === 'zoomeye') {
+                    $shodanFilters.hide();
+                    $zoomeyeFilters.toggle();
+                    $(this).text($zoomeyeFilters.is(':visible') ? 'Hide filters' : 'Show filters');
+                } else {
+                    $zoomeyeFilters.hide();
+                    $shodanFilters.toggle();
+                    $(this).text($shodanFilters.is(':visible') ? 'Hide filters' : 'Show filters');
+                }
             });
             $('#toggle-facets').click(function() {
-                $('#facets-list').toggle();
-                $(this).text($('#facets-list').is(':visible') ? 'Hide facets' : 'Show facets');
+                var provider = ($('input[name=provider]:checked').val() || 'shodan').toLowerCase();
+                var $shodanFacets = $('#facets-list');
+                var $zoomeyeFacets = $('#facets-list-zoomeye');
+                if (provider === 'zoomeye') {
+                    $shodanFacets.hide();
+                    $zoomeyeFacets.toggle();
+                    $(this).text($zoomeyeFacets.is(':visible') ? 'Hide facets' : 'Show facets');
+                } else {
+                    $zoomeyeFacets.hide();
+                    $shodanFacets.toggle();
+                    $(this).text($shodanFacets.is(':visible') ? 'Hide facets' : 'Show facets');
+                }
             });
-            $('#filters-list').on('click', '.add-filter', function() {
+            $('#filters-list, #filters-list-zoomeye').on('click', '.add-filter', function() {
                 var token = $(this).data('token');
                 addTokenToTemplate(token);
             });
-            $('#facets-list').on('click', '.add-facet', function() {
+            $('#facets-list, #facets-list-zoomeye').on('click', '.add-facet', function() {
                 var token = $(this).data('token');
                 addTokenToTemplate('facet:' + token);
             });
@@ -370,7 +438,8 @@
                     description: $('#query_description').val(),
                     query_template: $('#query_template').val(),
                     default_type: $('#default_type').val(),
-                    active_probe_default: $('#active_probe_default').is(':checked') ? '1' : '0'
+                    active_probe_default: $('#active_probe_default').is(':checked') ? '1' : '0',
+                    provider: ($('input[name=provider]:checked').val() || 'shodan')
                 };
                 $.get('/custom-queries/save', payload, function() {
                     resetForm();
@@ -394,6 +463,7 @@
                 $('#query_template').val(row.query_template);
                 $('#default_type').val(row.default_type);
                 $('#active_probe_default').prop('checked', row.active_probe_default);
+                $('input[name=provider][value=' + (row.provider || 'shodan') + ']').prop('checked', true).trigger('change');
             });
 
             $('#custom-query-table').on('click', '.delete-query', function() {
@@ -420,8 +490,21 @@
 
             $('#default_type').change(function() {
                 var val = $(this).val();
-                var base = (val && baseQueries[val]) ? baseQueries[val] : '';
+                var provider = ($('input[name=provider]:checked').val() || 'shodan').toLowerCase();
+                var source = provider === 'zoomeye' ? baseQueriesZoomEye : baseQueries;
+                var base = (val && source[val]) ? source[val] : '';
                 $('#query_template').val(base ? base : '');
+            });
+            $('input[name=provider]').on('change', function(){
+                $('#default_type').trigger('change');
+                refreshCustomCredits();
+                var provider = ($('input[name=provider]:checked').val() || 'shodan').toLowerCase();
+                if (provider === 'zoomeye') {
+                    $('#filters-list, #facets-list').hide();
+                    $('#toggle-filters, #toggle-facets').prop('disabled', true);
+                } else {
+                    $('#toggle-filters, #toggle-facets').prop('disabled', false);
+                }
             });
 
             $('#run_query_btn').click(function(e) {
@@ -435,6 +518,11 @@
                     pageVal = 1;
                     $('#run_page').val(1);
                 }
+                var pageCountVal = parseInt($('#run_page_count').val(), 10);
+                if (isNaN(pageCountVal) || pageCountVal < 1) {
+                    pageCountVal = 1;
+                    $('#run_page_count').val(1);
+                }
                 $("#custom-results tbody").empty();
                 var payload = {
                     id: selectedQuery.id,
@@ -443,7 +531,9 @@
                     network: $('#run_network').val(),
                     exclude: $('#run_exclude').val(),
                     page: pageVal,
-                    active_probe: $('#run_active_probe').is(':checked') ? '1' : '0'
+                    page_count: pageCountVal,
+                    active_probe: $('#run_active_probe').is(':checked') ? '1' : '0',
+                    provider: ($('input[name=provider]:checked').val() || 'shodan')
                 };
                 refreshCustomCredits();
                 var pgrbar = document.getElementById("pgrbar");
@@ -456,6 +546,8 @@
                 });
             });
             $('#run_page').on('input change', refreshCustomCredits);
+            $('#run_page_count').on('input change', refreshCustomCredits);
+            $('input[name=provider]').on('change', refreshCustomCredits);
         });
     </script>
 </body>

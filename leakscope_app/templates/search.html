@@ -180,6 +180,15 @@ padding: 5px;
                                     </div>
                                 </div>
                             </div>
+                            <div class="col-lg-3 col-md-3 col-sm-3 col-xs-12">
+                                <div class="form-group">
+                                    <label style="color:#fff;">Provider</label>
+                                    <div class="nk-int-st" style="color:#fff;">
+                                        <label style="margin-right:10px;"><input type="radio" name="provider" value="shodan" checked> Shodan</label>
+                                        <label><input type="radio" name="provider" value="zoomeye"> ZoomEye</label>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
                                 <div class="form-group">
                                     <div class="checkbox-nk">
@@ -189,6 +198,9 @@ padding: 5px;
                                         </label>
                                     </div>
                                 </div>
+                            </div>
+                            <div id="type-credit-banner" style="display:none; text-align:center; margin-bottom: 8px; color:#fbbf24; font-weight:bold;">
+                                <span id="type-credit-provider">Shodan</span> API Credits Used: <span id="type-credit-count">1</span>
                             </div>
                                 <center>Type</center>
                                 <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
@@ -583,31 +595,45 @@ for(let i = 0; i < a.length; i++) {
          for(var i = 0; i< values.length;i++){
             types.push(values[i].innerHTML);
          }
+         refreshTypeCredits(types);
          event.preventDefault();
          for (var j = 0; j < types.length; j++) {
             new_type = types[j];
-         dataString = 'country=' + $('input[id=country]').val() +
-                     '&keyword=' + $('input[id=keyword]').val() + '&exclude=' + $('input[id=exclude]').val() + '&network=' + $('input[id=network]').val() +
-                     '&type=' + types[j] + '&active_probe=' + ($('#active_probe').is(':checked') ? '1' : '0');
+        dataString = 'country=' + $('input[id=country]').val() +
+                    '&keyword=' + $('input[id=keyword]').val() + '&exclude=' + $('input[id=exclude]').val() + '&network=' + $('input[id=network]').val() +
+                    '&type=' + types[j] + '&active_probe=' + ($('#active_probe').is(':checked') ? '1' : '0') + '&provider=' + ($('input[name=provider]:checked').val() || 'shodan');
          const urlParams = new URLSearchParams(dataString);
          var param = urlParams.get('type');
 
-         $.ajax({
-         url: "/keyword/search",
-         type: 'GET',
-         dataType: 'json',
-         data: dataString,
+        $.ajax({
+        url: "/keyword/search",
+        type: 'GET',
+        dataType: 'json',
+        data: dataString,
          success:  function(response) {
          get_task_info(response.task_id);
 }
 }
 )
 }
-          }
+         }
 )
 </script>
 
 <script>
+function refreshTypeCredits(selectedTypes) {
+    var provider = ($('input[name=provider]:checked').val() || 'shodan').toLowerCase();
+    var count = (selectedTypes && selectedTypes.length) ? selectedTypes.length : 1;
+    $('#type-credit-provider').text(provider === 'zoomeye' ? 'ZoomEye' : 'Shodan');
+    $('#type-credit-count').text(count);
+    if (provider === 'zoomeye' || count > 1) {
+        $('#type-credit-banner').show();
+    } else {
+        $('#type-credit-banner').hide();
+    }
+}
+$(function(){ $('input[name=provider]').on('change', function(){ refreshTypeCredits($('.multi-select__option--selected')); }); });
+
 function get_task_info(task_id) {
     pgrbar = document.getElementById("pgrbar");
 

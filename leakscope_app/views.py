@@ -3,7 +3,7 @@ import os
 import socket
 from pathlib import Path
 from leakscope_app import forms
-from leakscope_app.models import Search, Amazons3be, Gitlab, Elastic, Rethink, Mongo, Cassandra, Ftp, AmazonBuckets, Github, FingerprintLog, CustomQuery, Dirs, Jenkins, Keys, Angular, Sonarqube, Couchdb, Kibana, Rsync, Minio, Grafana, Prometheus, Swagger, MongoExpress, OpenSearch, Amazonbe, Javascript, BlacklistEntry, Nexus, Artifactory, Registry
+from leakscope_app.models import Search, Amazons3be, Gitlab, Elastic, Rethink, Mongo, Cassandra, Ftp, AmazonBuckets, Github, FingerprintLog, CustomQuery, Dirs, Jenkins, Keys, Angular, Sonarqube, Couchdb, Kibana, Rsync, Minio, Grafana, Prometheus, Swagger, MongoExpress, OpenSearch, Amazonbe, Javascript, BlacklistEntry, Nexus, Artifactory, Registry, Etcd, ConsulKV, Rabbitmq, Solr, Gitea, Gogs, AzureBlob, GcsBucket
 from leakscope import tasks
 from leakscope.tasks import check_main
 from leakscope.tasks import _http_base
@@ -20,10 +20,14 @@ from datetime import datetime
 from django.utils import timezone
 import requests
 from django.apps import apps as django_apps
+import base64
+import json
+from leakscope.tasks import queries_zoomeye
+from pymongo import MongoClient
 
 
 types = ['angular','amazons3be',"gitlab","elastic","dirs","jenkins","mongo","rsync",'sonarqube','couchdb',"kibana","cassandra","rethink", "ftp",
-         "opensearch","grafana","prometheus","minio","swagger","mongoexpress","nexus","artifactory","registry","harbor","dockerapi"]
+         "opensearch","grafana","prometheus","minio","swagger","mongoexpress","nexus","artifactory","registry","harbor","dockerapi","etcd","consul","rabbitmq","solr","gitea","gogs","azureblob","gcsbucket"]
 
 
 def _flag(value):
@@ -59,6 +63,7 @@ def _get_public_ip():
 def index(request):
 
     credits = tasks.check_credits()
+    zoomeye_credits = tasks.check_credits(provider="zoomeye")
     for_later_counter = 0
     confirmed_counter = 0
     all_counter = 0
@@ -117,12 +122,39 @@ def index(request):
     except Exception as e:
         print(e)
 
+    # Build provider-split counts for stacked chart
+    provider_counts = {"shodan": {}, "zoomeye": {}}
+    for model in app_models:
+        try:
+            provider_field = None
+            fields = {f.name for f in model._meta.fields}
+            if 'provider' in fields:
+                provider_field = 'provider'
+            qs = model.objects.all()
+            if provider_field:
+                grouped = qs.values_list('provider').annotate(models.Count('id'))
+                for provider, count in grouped:
+                    prov = (provider or 'shodan').lower()
+                    provider_counts.setdefault(prov, {})[model.__name__] = provider_counts.setdefault(prov, {}).get(model.__name__, 0) + count
+            else:
+                # Fallback if no provider field: count everything as shodan
+                count = qs.count()
+                provider_counts['shodan'][model.__name__] = provider_counts['shodan'].get(model.__name__, 0) + count
+        except Exception:
+            continue
+
+    shodan_data = [provider_counts.get("shodan", {}).get(lbl, 0) for lbl in labels]
+    zoomeye_data = [provider_counts.get("zoomeye", {}).get(lbl, 0) for lbl in labels]
+
     context = {'credits':credits,
+               'zoomeye_credits': zoomeye_credits,
                "for_later_counter":for_later_counter,
                "confirmed_counter":confirmed_counter,
                "all_counter":all_counter,
-               "labels":labels,
-               'data':data,
+               "labels": json.dumps(labels or []),
+               'data': json.dumps(data or []),
+               'shodan_data': json.dumps(shodan_data or []),
+               'zoomeye_data': json.dumps(zoomeye_data or []),
                "random_leaks":random_leaks_context,
                "for_later":for_later_context,
                "percentages":open_stats}
@@ -130,7 +162,7 @@ def index(request):
     return render(request, 'index.html', context)
 
 def landing(request):
-    env_keys = ["SHODAN_API_KEY", "BLACKLIST"]
+    env_keys = ["SHODAN_API_KEY", "ZOOMEYE_API_KEY", "BLACKLIST"]
     env_status = []
     for key in env_keys:
         env_status.append({"key": key, "set": bool(os.environ.get(key))})
@@ -143,6 +175,7 @@ def landing(request):
             continue
     # Credits: count unique searches that produced stored results (Shodan only charges for non-empty hits)
     shodan_search_ids = set()
+    zoomeye_search_ids = set()
     try:
         for model in apps.get_app_config('leakscope_app').get_models():
             search_field = None
@@ -153,10 +186,14 @@ def landing(request):
             if not search_field:
                 continue
             ids = model.objects.values_list("search_id", flat=True).distinct()
-            shodan_search_ids.update(list(ids))
+            if ids:
+                shodan_search_ids.update(list(Search.objects.filter(id__in=ids, provider="shodan").values_list("id", flat=True)))
+                zoomeye_search_ids.update(list(Search.objects.filter(id__in=ids, provider="zoomeye").values_list("id", flat=True)))
         shodan_credits_used = len(shodan_search_ids)
+        zoomeye_credits_used = len(zoomeye_search_ids)
     except Exception:
         shodan_credits_used = 0
+        zoomeye_credits_used = 0
 
     context = {
         "private_ip": _get_private_ip(),
@@ -164,6 +201,7 @@ def landing(request):
         "env_status": env_status,
         "total_entries": total_entries,
         "shodan_credits_used": shodan_credits_used,
+        "zoomeye_credits_used": zoomeye_credits_used,
     }
     return render(request, "landing.html", context)
 
@@ -205,6 +243,14 @@ def stats_db(request, type=None):
         "registry": Registry,
         "harbor": Registry,
         "dockerapi": Registry,
+        "etcd": Etcd,
+        "consul": ConsulKV,
+        "rabbitmq": Rabbitmq,
+        "solr": Solr,
+        "gitea": Gitea,
+        "gogs": Gogs,
+        "azureblob": AzureBlob,
+        "gcsbucket": GcsBucket,
     }
     Model = model_map.get((type or "").lower())
     count = Model.objects.count() if Model else 0
@@ -243,6 +289,14 @@ def browse(request, type=None):
         "registry": Registry,
         "harbor": Registry,
         "dockerapi": Registry,
+        "etcd": Etcd,
+        "consul": ConsulKV,
+        "rabbitmq": Rabbitmq,
+        "solr": Solr,
+        "gitea": Gitea,
+        "gogs": Gogs,
+        "azureblob": AzureBlob,
+        "gcsbucket": GcsBucket,
     }
     Model = model_map.get((type or "").lower())
     if not Model:
@@ -269,6 +323,7 @@ def database(request):
                         "port": getattr(obj, "port", ""),
                         "keyword": getattr(getattr(obj, "search", None), "keyword", ""),
                         "created": getattr(getattr(obj, "search", None), "created_on", ""),
+                        "provider": getattr(getattr(obj, "search", None), "provider", "shodan"),
                     })
                     continue
                 obj.status = status
@@ -294,15 +349,18 @@ def keyword_search_results(request):
         network = request.GET['network']
         type = request.GET['type']
         page = request.GET.get('page') or "1"
+        page_count = request.GET.get('page_count') or "1"
+        provider = (request.GET.get('provider') or 'shodan').lower()
+        zoomeye_pagesize = request.GET.get('zoomeye_pagesize') or ""
         active_probe = request.GET.get('active_probe') in {'1', 'true', 'True', 'on'}
-        search = Search(type=type, keyword=keyword,country=country,network=network)
+        search = Search(type=type, keyword=keyword,country=country,network=network, provider=provider)
         print(search.id)
 
         search.save()
 
         gitlab_search_task = tasks.check_main.delay(fk=search.id, page=page, keyword=keyword, country=country,
-                                          network=network, type=type, exclude=exclude,
-                                          active_probe=active_probe)
+                                          network=network, type=type, exclude=exclude, provider=provider, page_count=page_count,
+                                          active_probe=active_probe, zoomeye_pagesize=zoomeye_pagesize)
         request.session['task_id'] = gitlab_search_task.task_id
 
         # return render(request, 'search.html', context={'task_id': gitlab_search_task.task_id, 'type':type})
@@ -317,13 +375,15 @@ def search_results(request,type):
         country = request.GET['country']
         network = request.GET['network']
         page = request.GET['page']
+        page_count = request.GET.get('page_count') or "1"
+        provider = (request.GET.get('provider') or 'shodan').lower()
         active_probe = request.GET.get('active_probe') in {'1', 'true', 'True', 'on'}
 
-        search = Search(type=type, keyword=keyword, country=country, network=network)
+        search = Search(type=type, keyword=keyword, country=country, network=network, provider=provider)
         search.save()
 
         gitlab_search_task = tasks.check_main.delay(fk=search.id, page=page, keyword=keyword, country=country,
-                                              network=network, type=type, exclude=exclude,
+                                              network=network, type=type, exclude=exclude, provider=provider, page_count=page_count,
                                               active_probe=active_probe)
 
         request.session['task_id'] = gitlab_search_task.task_id
@@ -342,35 +402,45 @@ def get_task_info(request):
         try:
             task = AsyncResult(task_id)
             meta = task.backend.get_task_meta(task_id)
+            if not isinstance(meta, dict):
+                meta = {}
         except Exception as exc:
             return HttpResponse(json.dumps({'state': 'FAILURE', 'result': str(exc)}, default=str), content_type='application/json', status=500)
 
+        def _safe(obj):
+            try:
+                return json.loads(json.dumps(obj, default=str))
+            except Exception:
+                try:
+                    return json.dumps(obj, default=str)
+                except Exception:
+                    return str(obj)
+
         try:
-            state = meta.get('status') or task.state
+            state = meta.get('status') or meta.get('state') or task.state
             result = meta.get('result')
 
             if state == "PENDING":
                 data = {'state': state, 'result': None}
             elif state == "PROGRESS":
                 try:
-                    data = {
-                        'state': state,
-                        'result': result,
-                        'percentage': result['current'] / result['total'] * 100,
-                    }
+                    pct = result['current'] / result['total'] * 100
                 except Exception:
-                    data = {
-                        'state': state,
-                        'result': result,
-                    }
-            elif state in ("FAILURE", "IGNORED"):
-                data = {'state': state, 'result': result}
+                    pct = None
+                data = {'state': state, 'result': _safe(result)}
+                if pct is not None:
+                    data['percentage'] = pct
             else:
-                data = {'state': state, 'result': result}
+                data = {'state': state, 'result': _safe(result)}
         except Exception as exc:
-            data = {'state': 'FAILURE', 'result': f'serialization error: {exc}'}
+            data = {'state': 'FAILURE', 'result': f'serialization error: {exc}', 'raw': _safe(meta)}
 
-        return HttpResponse(json.dumps(data, default=str), content_type='application/json')
+        try:
+            payload = json.dumps(data, default=str)
+            return HttpResponse(payload, content_type='application/json')
+        except Exception as exc:
+            fallback = json.dumps({'state': 'FAILURE', 'result': f'serialization error: {exc}', 'raw': _safe(data)}, default=str)
+            return HttpResponse(fallback, content_type='application/json', status=500)
     else:
         return HttpResponse('No job id given.')
 
@@ -409,6 +479,13 @@ def hide(request, type=None, ip=None):
         "registry": Registry,
         "harbor": Registry,
         "dockerapi": Registry,
+        "azureblob": AzureBlob,
+        "gcsbucket": GcsBucket,
+        "solr": Solr,
+        "gitea": Gitea,
+        "gogs": Gogs,
+        "azureblob": AzureBlob,
+        "gcsbucket": GcsBucket,
     }
     model = model_map.get((type or '').lower())
     if not model or not ip:
@@ -496,6 +573,14 @@ def custom_queries(request):
         "mongo": 'product:"MongoDB" port:27017',
         "cassandra": 'product:"Cassandra" port:9042',
         "rethink": 'product:"rethinkdb" port:28015',
+        "etcd": 'product:"etcd" port:2379',
+        "consul": 'product:"Consul" port:8500',
+        "rabbitmq": 'http.title:"RabbitMQ Management" port:15672',
+        "solr": 'product:"Solr"',
+        "gitea": 'http.title:"Gitea" port:3000',
+        "gogs": 'http.title:"Gogs" port:3000',
+        "azureblob": 'http.title:"Azure Blob Storage" OR product:"Azure Blob"',
+        "gcsbucket": 'http.title:"Index of /storage.googleapis.com" OR product:"Google Cloud Storage"',
         "kibana": 'product:"Kibana"',
         "gitlab": 'http.title:"GitLab" port:80',
         "jenkins": 'product:"Jenkins"',
@@ -525,6 +610,9 @@ def custom_queries(request):
         "facets": facets,
         "helper_error": helper_error,
         "base_queries_json": json.dumps(base_queries),
+        "base_queries_zoomeye_json": json.dumps(queries_zoomeye),
+        "zoomeye_filters": ["country", "subdivisions", "city", "product", "service", "device", "os", "port"],
+        "zoomeye_facets": ["country", "subdivisions", "city", "product", "service", "device", "os", "port"],
     }
     return render(request, "custom_queries.html", context)
 
@@ -541,6 +629,7 @@ def custom_query_list(request):
             "active_probe_default": q.active_probe_default,
             "updated_on": q.updated_on.isoformat() if q.updated_on else "",
             "last_status": q.last_status,
+            "provider": q.provider,
         })
     return JsonResponse({"results": payload})
 
@@ -554,6 +643,9 @@ def custom_query_save(request):
     description = request.GET.get("description", "")
     default_type = request.GET.get("default_type", "")
     active_probe_default = _flag(request.GET.get("active_probe_default", False))
+    provider = (request.GET.get("provider") or "shodan").lower()
+    if provider not in ("shodan", "zoomeye"):
+        provider = "shodan"
     if qid:
         q = CustomQuery.objects.filter(id=qid).first()
         if not q:
@@ -565,6 +657,7 @@ def custom_query_save(request):
     q.query_template = template
     q.default_type = default_type
     q.active_probe_default = active_probe_default
+    q.provider = provider
     q.save()
     return JsonResponse({"result": "ok", "id": q.id})
 
@@ -604,7 +697,11 @@ def custom_query_run(request):
     network = request.GET.get("network", "")
     exclude = request.GET.get("exclude", "")
     page = request.GET.get("page") or "1"
+    page_count = request.GET.get("page_count") or "1"
     active_probe = _flag(request.GET.get("active_probe", q.active_probe_default))
+    provider = (request.GET.get("provider") or q.provider or "shodan").lower()
+    if provider not in ("shodan", "zoomeye"):
+        provider = "shodan"
 
     q.last_run_at = timezone.now()
     q.last_status = "queued"
@@ -617,7 +714,9 @@ def custom_query_run(request):
         network=network,
         exclude=exclude,
         page=page,
+        page_count=page_count,
         active_probe=active_probe,
+        provider=provider,
     )
     return JsonResponse({"task_id": task_res.task_id})
 
@@ -654,6 +753,14 @@ def _model_by_type(type_name):
         "registry": Registry,
         "harbor": Registry,
         "dockerapi": Registry,
+        "etcd": Etcd,
+        "consul": ConsulKV,
+        "rabbitmq": Rabbitmq,
+        "solr": Solr,
+        "gitea": Gitea,
+        "gogs": Gogs,
+        "azureblob": AzureBlob,
+        "gcsbucket": GcsBucket,
     }
     return model_map.get((type_name or "").lower())
 
@@ -690,6 +797,14 @@ def _preview_types():
         "registry",
         "harbor",
         "dockerapi",
+        "etcd",
+        "consul",
+        "rabbitmq",
+        "solr",
+        "gitea",
+        "gogs",
+        "azureblob",
+        "gcsbucket",
     })
 
 
@@ -743,6 +858,7 @@ def export_start(request):
         "repo": request.GET.get("repo"),
         "bucket": request.GET.get("bucket"),
         "keyspace": request.GET.get("keyspace"),
+        "table": request.GET.get("table"),
         "filter": request.GET.get("filter"),
         "max_repos": request.GET.get("max_repos"),
         "max_tags": request.GET.get("max_tags"),
@@ -808,6 +924,7 @@ def explore_start(request):
         export_options["shares"] = _split(getattr(obj, "shares", ""))
     elif type_name == "cassandra":
         export_options["keyspaces"] = _split(getattr(obj, "keyspaces", ""))
+        export_options["tables"] = []
     elif type_name == "rethink":
         export_options["dbs"] = _split(getattr(obj, "databases", ""))
     elif type_name == "minio":
@@ -816,6 +933,20 @@ def explore_start(request):
         export_options["secrets"] = _split(getattr(obj, "secrets", ""))
     elif type_name == "github":
         export_options["secrets"] = _split(getattr(obj, "secret", ""))
+    elif type_name == "etcd":
+        export_options["keys"] = _split(getattr(obj, "keys_sample", ""))
+    elif type_name == "consul":
+        export_options["keys"] = _split(getattr(obj, "kv_roots", ""))
+    elif type_name == "rabbitmq":
+        export_options["vhosts"] = _split(getattr(obj, "vhosts", ""))
+    elif type_name == "solr":
+        export_options["cores"] = _split(getattr(obj, "cores", ""))
+    elif type_name in ("gitea", "gogs"):
+        export_options["repos"] = _split(getattr(obj, "repos", ""))
+    elif type_name == "azureblob":
+        export_options["containers"] = _split(getattr(obj, "containers", ""))
+    elif type_name == "gcsbucket":
+        export_options["objects"] = _split(getattr(obj, "objects_list", ""))
 
     return JsonResponse({"type": type_name, "target_id": target_id, "export_options": export_options})
 
@@ -948,6 +1079,110 @@ def explore_next(request):
         if filter_text:
             secrets = [s for s in secrets if filter_text in s.lower()]
         items = secrets
+    elif type_name == "solr":
+        cores = _split(getattr(obj, "cores", ""))
+        if filter_text:
+            cores = [c for c in cores if filter_text in str(c).lower()]
+        items = cores
+    elif type_name in ("gitea", "gogs"):
+        repos = _split(getattr(obj, "repos", ""))
+        if filter_text:
+            repos = [r for r in repos if filter_text in str(r).lower()]
+        items = repos
+    elif type_name == "azureblob":
+        containers = _split(getattr(obj, "containers", ""))
+        if filter_text:
+            containers = [c for c in containers if filter_text in str(c).lower()]
+        items = containers
+    elif type_name == "gcsbucket":
+        objects = _split(getattr(obj, "objects_list", ""))
+        if filter_text:
+            objects = [o for o in objects if filter_text in str(o).lower()]
+        items = objects
+    elif type_name == "etcd":
+        try:
+            base = _http_base(obj.ip, obj.port, scheme=getattr(obj, "scheme", "http") or "http")
+            prefix = _clean_name(selection.get("index") or "")
+            max_items = int(selection.get("max_items") or 20)
+            max_items = max(1, min(max_items, 100))
+            resp = requests.get(f"{base}/v2/keys/{prefix}?recursive=true&sorted=true&limit={max_items}", timeout=8, verify=False)
+            if resp.status_code == 404:
+                payload = {"key": "", "range_end": "", "limit": max_items}
+                v3 = requests.post(f"{base}/v3/kv/range", json=payload, timeout=8, verify=False)
+                if v3.ok:
+                    data = []
+                    for kvs in v3.json().get("kvs", []) or []:
+                        k = kvs.get("key")
+                        if k:
+                            data.append(base64.b64decode(k).decode(errors="ignore"))
+                    items = data
+                elif v3.status_code in (401, 403):
+                    items = [{"error": "auth required"}]
+            elif resp.status_code in (401, 403):
+                items = [{"error": "auth required"}]
+            elif resp.ok:
+                data = []
+                try:
+                    def _collect(node):
+                        if isinstance(node, dict):
+                            key = node.get("key")
+                            if key:
+                                data.append(key)
+                            for child in node.get("nodes", []) or []:
+                                _collect(child)
+                    _collect(resp.json().get("node", {}))
+                    items = data[:max_items]
+                except Exception:
+                    items = []
+        except Exception as exc:
+            items = [{"error": str(exc)}]
+    elif type_name == "consul":
+        try:
+            base = _http_base(obj.ip, obj.port, scheme=getattr(obj, "scheme", "http") or "http")
+            prefix = _clean_name(selection.get("index") or "")
+            max_items = int(selection.get("max_items") or 20)
+            max_items = max(1, min(max_items, 100))
+            keys_url = f"{base}/v1/kv/{prefix}?keys&recurse&limit={max_items}" if prefix else f"{base}/v1/kv/?keys&limit={max_items}"
+            resp = requests.get(keys_url, timeout=8, verify=False)
+            if resp.status_code in (401, 403):
+                items = [{"error": "auth required"}]
+            elif resp.ok and isinstance(resp.json(), list):
+                data = resp.json()
+                if filter_text:
+                    data = [k for k in data if filter_text in k.lower()]
+                items = data[:max_items]
+        except Exception as exc:
+            items = [{"error": str(exc)}]
+    elif type_name == "solr":
+        cores = _split(getattr(obj, "cores", ""))
+        if filter_text:
+            cores = [c for c in cores if filter_text in str(c).lower()]
+        items = cores
+    elif type_name in ("gitea", "gogs"):
+        repos = _split(getattr(obj, "repos", ""))
+        if filter_text:
+            repos = [r for r in repos if filter_text in str(r).lower()]
+        items = repos
+    elif type_name == "rabbitmq":
+        try:
+            base = _http_base(obj.ip, obj.port, scheme=getattr(obj, "scheme", "http") or "http")
+            qresp = requests.get(f"{base}/api/queues", timeout=8, verify=False)
+            if qresp.status_code in (401, 403):
+                items = [{"error": "auth required"}]
+            elif qresp.ok and isinstance(qresp.json(), list):
+                data = qresp.json()
+                cap = max(1, min(int(selection.get("max_items") or 50), 200))
+                filtered = []
+                for q in data:
+                    name = q.get("name") if isinstance(q, dict) else q
+                    if filter_text and name and filter_text not in name.lower():
+                        continue
+                    filtered.append(name if isinstance(name, str) else q)
+                    if len(filtered) >= cap:
+                        break
+                items = filtered
+        except Exception as exc:
+            items = [{"error": str(exc)}]
 
     return JsonResponse({"type": type_name, "target_id": target_id, "items": items})
 

@@ -141,6 +141,7 @@
                                     <tr>
                                         <th>Keyword</th>
                                         <th>Type</th>
+                                        <th>Provider</th>
                                         <th>IP</th>
                                         <th>Port</th>
                                         <th>Status</th>
@@ -167,6 +168,7 @@
 
                             <td> {{ git.search.network }} {{ git.search.country }} {{ git.search.keyword }}</td>
                             <td id="type">{{ git.search.type }}</td>
+                            <td>{{ git.search.provider|default:"shodan" }}</td>
                                         <td>{{ git.ip }}</td>
                                                                                 <td>{{ git.port }}</td>
                                                                                 <td>{{ git.status }}</td>
@@ -196,16 +198,6 @@
                                 {% endfor %}
 
                                 </thead>
-                                <tbody>
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <th>Url</th>
-                                        <th>IP</th>
-                                        <th>Port</th>
-                                        <th>Action</th>
-                                    </tr>
-                                </tfoot>
                             </table>
                             <div class="panel panel-default" style="margin-top:20px; color:#e5e7eb;">
                                 <div class="panel-heading" id="hidden-toggle" style="cursor:pointer; display:flex; align-items:center; justify-content:space-between; color:#e5e7eb;">

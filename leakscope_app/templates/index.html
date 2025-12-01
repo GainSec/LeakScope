@@ -154,7 +154,7 @@
     <div class="notika-status-area">
         <div class="container">
             <div class="row">
-                <div class="col-lg-6 col-md-6 col-sm-6 col-xs-12">
+                <div class="col-lg-4 col-md-4 col-sm-6 col-xs-12">
                     <div class="wb-traffic-inner notika-shadow sm-res-mg-t-30 tb-res-mg-t-30">
                         <div class="website-traffic-ctn">
                             <h2><span class="counter">{{ credits }}</span></h2>
@@ -162,7 +162,15 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-lg-6 col-md-6 col-sm-6 col-xs-12">
+                <div class="col-lg-4 col-md-4 col-sm-6 col-xs-12">
+                    <div class="wb-traffic-inner notika-shadow sm-res-mg-t-30 tb-res-mg-t-30">
+                        <div class="website-traffic-ctn">
+                            <h2><span class="counter">{{ zoomeye_credits }}</span></h2>
+                            <p>ZoomEye points</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4 col-md-4 col-sm-6 col-xs-12">
                     <div class="wb-traffic-inner notika-shadow sm-res-mg-t-30 tb-res-mg-t-30">
                         <div class="website-traffic-ctn">
                             <h2><span class="counter">{{ all_counter }}</span></h2>
@@ -239,7 +247,20 @@
     <script src="{% static 'js/main.js' %}"></script>
     <script src="{% static 'js/charts/Chart.js' %}"></script>
     <script src="{% static 'js/charts/bar-chart.js' %}"></script>
-    <script>drawCharts({{ labels|safe }}, {{ data|safe }});</script>
+    <script>
+        (function(){
+            try {
+                const labels = JSON.parse('{{ labels|escapejs }}');
+                const data = JSON.parse('{{ data|escapejs }}');
+                const shodan = JSON.parse('{{ shodan_data|escapejs }}');
+                const zoomeye = JSON.parse('{{ zoomeye_data|escapejs }}');
+                console.log('Chart data', {labels, data, shodan, zoomeye});
+                drawCharts(labels, data, shodan, zoomeye);
+            } catch (e) {
+                console.error('Failed to render chart', e);
+            }
+        })();
+    </script>
 	<!-- tawk chat JS
 		============================================ -->
 

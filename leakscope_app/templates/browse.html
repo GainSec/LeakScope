@@ -141,10 +141,8 @@
                             <table id="data-table-basic" class="table table-striped" style="table-layout:fixed;">
                                 <thead>
                                     <tr>
-                                        {% if type != "github" %}
                                         <th>Keyword</th>
-
-                                        {% endif %}
+                                        <th>Provider</th>
                                 {% if type == "elastic" %}
                                         <th>IP</th>
                                         <th>Cluster Name</th>
@@ -235,12 +233,8 @@
                                                                                             <tr id="{{ git.ip }}{{ git.bucket }}{{ git.commit }}">
 
                                                 {% endif %}
-                                        {% if type != "github" %}
-
-
                                         <td> {{ git.search.keyword }} {{ git.search.country }} {{ git.search.network }}</td>
-
-                                {% endif %}
+                                        <td>{{ git.provider|default:git.search.provider|default:"shodan" }}</td>
                                 {% if type == "elastic" %}
                                 <td style="word-wrap: break-word">
                                             {% if git.port == "443" or git.port == "8443" %}
