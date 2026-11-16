@@ -1,6 +1,14 @@
 # LeakScope
 
-LeakScope is a self-hosted workbench for finding, collecting and reviewing exposed services. It searches many different services and APIs, saves every result with its source and timestamps, captures screenshots and protocol evidence, watches certificate transparency for your domains, and lets you chain all of it into no-code workflows.
+LeakScope is a self-hosted application to discover assets, investigate exposed services, collect evidence, and monitor changes. It combines provider APIs, search engine dorking, public records, and direct service checks. It searches Shodan, ZoomEye, and Netlas and uses RIPE and other sources for network and registration data. It also discovers cloud resources and expands domain lists.
+
+Service profiles cover databases, storage, web applications, network services, and industrial technologies. You can inspect selected targets, browse supported services, and collect responses, protocol transcripts, screenshots, and service identity data. Saved observations retain their sources and timestamps.
+
+LeakScope supports industrial control systems (ICS) and operational technology (OT). Its industrial tools include technology profiles, protocol discovery, device identification, and related web interface checks. Supported operations include read-only Modbus and BACnet point queries. Active TCP port checks provide further information about reachable services.
+
+A built in local certificate transparency service reads public certificate logs. Domain and keyword watches monitor its stream and can start configured collection jobs. Scheduled searches and comparisons between saved observations help track new results and changes.
+
+You can group assets by organization and connect records through shared evidence. Graphs, maps, galleries, and reports support investigation and review. No-code workflows combine searches, data lookups, filters, branches, captures, tags, and exports. Workflows can run manually or on a schedule, with limits for provider requests and target contacts. You can export saved records, captured evidence, reports, and workflow definitions. Optional web research and AI assistance provide query suggestions with source references.
 
 ![LeakScope overview](docs/readme/home.png)
 
