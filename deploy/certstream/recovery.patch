@@ -1,0 +1,111 @@
+--- a/internal/certificatetransparency/ct-watcher.go
++++ b/internal/certificatetransparency/ct-watcher.go
+@@ -438,16 +438,12 @@
+ 
+ 	// If recovery is enabled, we start at the saved index. Otherwise, we start at the latest STH.
+ 	recoveryEnabled := config.AppConfig.General.Recovery.Enabled
+-	if !recoveryEnabled {
+-		sth, getSTHerr := jsonClient.GetSTH(ctx)
+-		if getSTHerr != nil {
+-			// TODO this can happen due to a 429 error. We should retry the request
+-			log.Printf("Could not get STH for '%s': %s\n", w.ctURL, getSTHerr)
+-			return ErrFetchingSTHFailed
+-		}
+-		// Start at the latest STH to skip all the past certificates
+-		w.ctIndex = sth.TreeSize
+-	}
++	sth, getSTHerr := jsonClient.GetSTH(ctx)
++	if getSTHerr != nil {
++		return ErrFetchingSTHFailed
++	}
++	w.ctIndex = recoveryStartIndex(w.ctIndex, sth.TreeSize, recoveryEnabled)
++	metrics.Metrics.SetCTIndex(normalizeCtlogURL(w.ctURL), w.ctIndex)
+ 
+ 	// Handle gosec G115 warning
+ 	if w.ctIndex > math.MaxInt64 {
+@@ -486,17 +482,14 @@
+ 
+ 	// If recovery is enabled and the CT index is set, we start at the saved index. Otherwise, we start at the latest checkpoint.
+ 	recoveryEnabled := config.AppConfig.General.Recovery.Enabled
+-	if !recoveryEnabled {
+-		checkpoint, err := staticCTClient.FetchCheckpoint(ctx)
+-		if err != nil {
+-			log.Printf("Could not get checkpoint for '%s': %s\n", w.ctURL, err)
+-			return ErrFetchingSTHFailed
+-		}
+-		// Start at the latest checkpoint to skip all the past certificates
+-		staticCTClient.ctIndex = checkpoint.Size
+-	}
+-
+-	err := staticCTClient.Monitor(ctx, w.foundCertCallback, w.foundPrecertCallback)
++	checkpoint, err := staticCTClient.FetchCheckpoint(ctx)
++	if err != nil {
++		return ErrFetchingSTHFailed
++	}
++	staticCTClient.ctIndex = recoveryStartIndex(w.ctIndex, checkpoint.Size, recoveryEnabled)
++	metrics.Metrics.SetCTIndex(normalizeCtlogURL(w.ctURL), staticCTClient.ctIndex)
++
++	err = staticCTClient.Monitor(ctx, w.foundCertCallback, w.foundPrecertCallback)
+ 	if err != nil {
+ 		return fmt.Errorf("error scanning for certificates: %w", err)
+ 	}
+--- /dev/null
++++ b/internal/certificatetransparency/leakscope_recovery.go
+@@ -0,0 +1,24 @@
++package certificatetransparency
++
++import (
++    "log"
++    "github.com/d-Rickyy-b/certstream-server-go/internal/metrics"
++)
++
++const recoveryMaxReplay uint64 = 10000
++
++// Missing cursors (including newly added logs) must never replay from genesis.
++// A bounded recovery window deliberately reports and skips larger coverage gaps.
++func recoveryStartIndex(saved, tail uint64, enabled bool) uint64 {
++    if !enabled || saved == 0 {
++        metrics.LiveTailBootstraps.Inc()
++        log.Printf("LeakScope: bootstrap CT log at live tail %d", tail)
++        return tail
++    }
++    if saved > tail || tail-saved > recoveryMaxReplay {
++        metrics.RecoveryGaps.Inc()
++        log.Printf("LeakScope: CT recovery gap; saved=%d tail=%d; restarting at tail", saved, tail)
++        return tail
++    }
++    return saved
++}
+--- /dev/null
++++ b/internal/metrics/leakscope_recovery.go
+@@ -0,0 +1,6 @@
++package metrics
++
++import vm "github.com/VictoriaMetrics/metrics"
++
++var LiveTailBootstraps = vm.NewCounter("leakscope_certstream_tail_bootstraps_total")
++var RecoveryGaps = vm.NewCounter("leakscope_certstream_recovery_gaps_total")
+--- /dev/null
++++ b/internal/certificatetransparency/leakscope_recovery_test.go
+@@ -0,0 +1,21 @@
++package certificatetransparency
++
++import "testing"
++
++func TestLeakScopeRecoveryStart(t *testing.T) {
++    tests := []struct{name string; saved,tail uint64; enabled bool; want uint64}{
++        {"missing cursor",0,500000,true,500000},
++        {"empty new log",0,0,true,0},
++        {"resume recent cursor",120,125,true,120},
++        {"bounded replay",100,50000,true,50000},
++        {"invalid future cursor",200,125,true,125},
++        {"explicit no recovery",120,125,false,125},
++    }
++    for _, item := range tests {
++        t.Run(item.name,func(t *testing.T){
++            if got:=recoveryStartIndex(item.saved,item.tail,item.enabled); got!=item.want {
++                t.Fatalf("got %d, want %d",got,item.want)
++            }
++        })
++    }
++}

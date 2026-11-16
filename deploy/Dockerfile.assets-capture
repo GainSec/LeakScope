@@ -1,0 +1,26 @@
+# Node runtime pinned by registry digest; npm tarballs pinned in package-lock.json.
+ARG LEAKSCOPE_CAPTURE_BASE=leakscope:4.1.1-org-qa-capture-20261108
+FROM node:22-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d AS browser-node
+WORKDIR /opt/leakscope-browser
+COPY browser_runtime/package.json browser_runtime/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+
+FROM ${LEAKSCOPE_CAPTURE_BASE}
+USER 0
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb=2:21.1.16-1.3+deb13u4 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=browser-node /usr/local/bin/node /usr/local/bin/node
+COPY --from=browser-node /opt/leakscope-browser /opt/leakscope-browser
+COPY browser_runtime/*.mjs /opt/leakscope-browser/
+COPY deploy/browser-capture-entrypoint.sh /usr/local/bin/leakscope-browser-entrypoint
+RUN chmod 755 /usr/local/bin/leakscope-browser-entrypoint
+ENV NODE_OPTIONS="--max-old-space-size=256"
+COPY requirements.txt /app/requirements.txt
+RUN pip install --require-hashes -r /app/requirements.txt
+COPY leakscope /app/leakscope
+COPY leakscope_app /app/leakscope_app
+COPY tests /app/tests
+RUN LEAKSCOPE_SECRET_KEY=static-build-only LEAKSCOPE_CONFIG_FILE=/nonexistent \
+    LEAKSCOPE_DATA_DIR=/tmp/leakscope-assets-static python manage.py collectstatic --noinput \
+    && rm -rf /tmp/leakscope-assets-static
+USER 501:20

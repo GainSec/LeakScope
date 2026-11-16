@@ -1,0 +1,16 @@
+# Apply Python/UI changes to a tested runtime without replacing capture tools.
+# Caller must select an existing app/capture base with matching requirements.
+ARG LEAKSCOPE_RUNTIME_BASE
+FROM ${LEAKSCOPE_RUNTIME_BASE}
+USER 0
+COPY requirements.txt /app/requirements.txt
+RUN python -m pip install --no-cache-dir --require-hashes -r /app/requirements.txt
+COPY leakscope /app/leakscope
+COPY leakscope_app /app/leakscope_app
+COPY tests /app/tests
+RUN chmod -R a+rX /app/leakscope /app/leakscope_app /app/tests \
+    && LEAKSCOPE_SECRET_KEY=static-build-only LEAKSCOPE_CONFIG_FILE=/nonexistent \
+    LEAKSCOPE_DATA_DIR=/tmp/leakscope-runtime-static \
+    python manage.py collectstatic --clear --noinput \
+    && rm -rf /tmp/leakscope-runtime-static
+USER 501:20

@@ -1,0 +1,316 @@
+/* LeakScope instrument layer: typefaces, shell and the visual instruments.
+   Shared page components (buttons, panels, tables) are finished in experience.css,
+   which stays last in the cascade. */
+@font-face{font-family:"Sofia Sans";src:url("../fonts/scope/SofiaSans-latin-wght.woff2") format("woff2");font-weight:1 1000;font-style:normal;font-display:swap}
+@font-face{font-family:"Sofia Sans Extra Condensed";src:url("../fonts/scope/SofiaSansExtraCondensed-latin-wght.woff2") format("woff2");font-weight:1 1000;font-style:normal;font-display:swap}
+@font-face{font-family:"B612 Mono";src:url("../fonts/scope/B612Mono-latin-400.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"B612 Mono";src:url("../fonts/scope/B612Mono-latin-700.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+
+:root{
+  --scope-sans:"Sofia Sans","Avenir Next","Segoe UI",system-ui,sans-serif;
+  --scope-display:"Sofia Sans Extra Condensed","Sofia Sans","Arial Narrow",sans-serif;
+  --scope-mono:"B612 Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --scope-night:#070c15;--scope-plate:#0e1826;--scope-raised:#142233;
+  --scope-line:#22334a;--scope-line-strong:#3a5068;
+  --scope-ink:#e8f0fa;--scope-dim:#a3b6cc;--scope-faint:#7389a3;
+  --scope-signal:#83e5d5;--scope-signal-strong:#b0f4e8;
+  --scope-good:#0ca30c;--scope-warning:#fab219;--scope-serious:#ec835a;--scope-critical:#d03b3b;
+  --canvas:var(--scope-night);
+  font-family:var(--scope-sans);
+}
+body{font-family:var(--scope-sans);font-size:14.5px;background:radial-gradient(120% 70% at 78% -10%,#16264022,transparent 60%),var(--scope-night)}
+button,input,select,textarea{font-family:inherit}
+code,pre,kbd,samp,.code-box,.scope-mono{font-family:var(--scope-mono)}
+.scope-mono{font-size:.9em;letter-spacing:-.01em}
+
+/* ------------------------------------------------------------------ shell */
+.sidebar{background:linear-gradient(180deg,#0c1420,#080e18 70%);border-right:1px solid var(--scope-line)}
+.brand-word{display:none;font-family:var(--scope-display);font-size:27px;font-weight:750;letter-spacing:.01em;color:var(--scope-ink);line-height:1}
+.navigation a{font-size:14px;font-weight:500;color:#aebfd4;border-radius:8px;min-height:36px;align-items:center}
+.navigation a.active{background:#83e5d514;border-color:transparent;box-shadow:inset 2px 0 var(--scope-signal);color:#f1fffb}
+.navigation .nav-icon{display:grid;place-items:center}
+.navigation .nav-icon svg{stroke-width:1.6}
+.nav-group>summary{font-size:11px;letter-spacing:.04em;text-transform:none;font-weight:600;color:var(--scope-faint)}
+.sidebar-note{font-size:11px}
+/* Labelled sidebar: every page by name, grouped by job. Sized so Home, four open groups and the folded Tools group fit a 900px window. */
+.sidebar{display:flex;flex-direction:column;padding:14px 10px 12px}
+.sidebar .brand{padding:0 6px;margin-bottom:10px}
+/* The banner fills the sidebar's width at its own proportions, on desktop and in the phone drawer. */
+.sidebar .brand-banner{width:100%;height:auto;max-height:none;aspect-ratio:768/352;object-fit:contain}
+.sidebar .command-toggle{width:100%;min-width:0;min-height:32px;margin:0 0 6px;padding:4px 10px}
+.navigation{gap:1px}
+.navigation a,.settings-link{min-height:28px;padding:2px 10px;font-size:13.5px;line-height:1.3}
+.nav-group{margin:0}
+.nav-group>summary{padding:7px 10px 2px;line-height:1.2;min-height:0}
+.nav-group>.navigation{margin:0;padding:0}
+.sidebar .brand{margin-bottom:8px}
+.sidebar-bottom{margin-top:auto;padding-top:8px;border-top:1px solid var(--scope-line)}
+.settings-link{display:flex;align-items:center;gap:10px;border-radius:8px;font-weight:500;color:#aebfd4;text-decoration:none}
+.settings-link.active{background:#83e5d514;box-shadow:inset 2px 0 var(--scope-signal);color:#f1fffb}
+.settings-link .nav-icon{display:grid;place-items:center;flex:0 0 19px;width:19px;height:19px;color:#97adc8}
+.settings-link .nav-icon svg{width:18px;height:18px;display:block;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.nav-compact-toggle{min-height:28px;padding:2px 10px;font-size:12.5px}
+.page-tabs{display:flex;gap:22px;margin:0 0 18px;border-bottom:1px solid var(--scope-line)}
+.page-tabs a{padding:8px 0;margin-bottom:-1px;border-bottom:2px solid transparent;color:var(--scope-dim);font-weight:600;text-decoration:none}
+.page-tabs a:hover{color:var(--scope-ink)}
+.page-tabs a[aria-current]{color:var(--scope-ink);border-bottom-color:var(--scope-signal)}
+.topbar{height:54px;background:#070c15d9;border-bottom:1px solid var(--scope-line);backdrop-filter:blur(16px) saturate(1.2)}
+.breadcrumb strong{font-size:14px;font-weight:600;color:var(--scope-dim)}
+.command-toggle{background:#0e1826;border-color:var(--scope-line);border-radius:8px;font-size:13px;color:var(--scope-dim)}
+.command-toggle:hover{border-color:var(--scope-line-strong);color:var(--scope-ink)}
+.command-toggle kbd{font:10px var(--scope-mono);border-color:var(--scope-line-strong)}
+.motion-toggle:not(.activity-logs-toggle),.help-link,.private-pill{font-size:12.5px}
+.private-pill{background:none;border:1px solid var(--scope-line);border-radius:999px;padding:5px 10px}
+main{padding:28px 32px 44px}
+.page-footer{font-size:11px;border-color:var(--scope-line);color:var(--scope-faint)}
+.page-footer .made-by{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px 7px;font-size:12px;letter-spacing:0;text-transform:none;color:var(--scope-dim)}
+.page-footer .made-by a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+.page-footer .made-by a:hover{color:#f1fffb}
+.page-footer .made-by-logo{display:inline-flex;text-decoration:none}
+.page-footer .made-by-logo img{display:block;height:22px;width:auto;opacity:.9}
+.page-footer .made-by-logo:hover img{opacity:1}
+
+@media(min-width:801px){
+  /* The rail: icons only until the pointer or keyboard focus is on it. It widens over the page, so the content never moves. */
+  body.nav-compact .layout{grid-template-columns:64px minmax(0,1fr)}
+  body.nav-compact .sidebar{width:64px;padding:14px 10px 12px;z-index:40;overflow-x:hidden;transition:width .16s ease,box-shadow .16s ease}
+  body.nav-compact .sidebar:is(:hover,:focus-within){width:248px;box-shadow:28px 0 70px #000a;transition-delay:.14s}
+  body.nav-compact .brand{display:flex;align-items:center;justify-content:flex-start;gap:12px;padding:2px 4px;margin-bottom:18px;line-height:1;height:40px;text-decoration:none}
+  body.nav-compact .brand-compact{flex:none}
+  body.nav-compact .sidebar:is(:hover,:focus-within) .brand-word{display:block}
+  body.nav-compact .nav-group{position:relative;margin:0;padding:13px 0 11px;border-top:1px solid var(--scope-line)}
+  body.nav-compact .nav-group>summary{display:block;visibility:hidden;position:absolute;top:-8px;left:6px;padding:0 6px;background:#0a111c;line-height:16px;pointer-events:none}
+  body.nav-compact .nav-group>summary:after{content:none}
+  body.nav-compact .sidebar:is(:hover,:focus-within) .nav-group>summary{visibility:visible}
+  body.nav-compact .navigation a{justify-content:flex-start;padding:8px 12px;gap:13px;white-space:nowrap}
+  body.nav-compact .sidebar:is(:hover,:focus-within) .nav-title{display:inline}
+  body.nav-compact .sidebar-bottom{border-top:1px solid var(--scope-line);padding-top:10px}
+  body.nav-compact .nav-compact-toggle{justify-content:flex-start;padding:8px 12px;gap:13px;white-space:nowrap}
+  body.nav-compact .settings-link{justify-content:flex-start;padding:8px 12px;gap:13px;white-space:nowrap}
+  body.nav-compact .sidebar .command-toggle{justify-content:flex-start;padding:6px 11px;gap:13px;white-space:nowrap;overflow:hidden}
+  body.nav-compact .sidebar:not(:hover,:focus-within) .command-toggle kbd{display:none}
+  body.nav-compact .sidebar .brand-banner{display:none}
+  body:not(.nav-compact) .layout{grid-template-columns:236px minmax(0,1fr)}
+}
+@media(prefers-reduced-motion:reduce){body.nav-compact .sidebar{transition:none}}
+
+/* ------------------------------------------------------ page-level type */
+.page-heading h1,.atlas-heading h1{font-family:var(--scope-display);font-weight:720;font-size:clamp(34px,3.4vw,46px);line-height:1;letter-spacing:.005em;color:var(--scope-ink)}
+.page-heading p,.atlas-heading p{color:var(--scope-dim);font-size:14px;max-width:72ch}
+.atlas-eyebrow{margin-bottom:6px;font-size:12.5px;letter-spacing:0;text-transform:none;color:var(--scope-faint)}
+.metric .number,.atlas-metric strong,.atlas-tech-count strong,.workspace-endpoint-count strong,.ops-stream-metric strong{font-family:var(--scope-display);font-weight:680;letter-spacing:.01em;font-variant-numeric:normal}
+
+/* Saved views become a quiet utility line rather than the first thing on the page. */
+#page-root .workspace-saved-views{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;padding:0;margin:0 0 14px;border:0;background:none;box-shadow:none;font-size:12.5px;opacity:.72;transition:opacity .15s}
+#page-root .workspace-saved-views:is(:hover,:focus-within){opacity:1}
+#page-root .workspace-saved-views::after{content:none}
+#page-root .workspace-saved-views details[open]{flex-basis:100%}
+#page-root .workspace-saved-views .select{min-height:30px;padding:4px 8px}
+#page-root .workspace-saved-views .btn{min-height:30px;padding:4px 10px}
+
+/* Long provenance notes fold away; one click brings them back. */
+.scope-note{margin:0 0 16px;font-size:13px;color:var(--scope-dim)}
+.scope-note>summary{display:inline-flex;align-items:center;gap:7px;cursor:pointer;list-style:none;color:var(--scope-faint);padding:3px 0}
+.scope-note>summary::-webkit-details-marker{display:none}
+.scope-note>summary::before{content:"i";display:grid;place-items:center;width:15px;height:15px;border:1px solid currentColor;border-radius:50%;font:700 10px/1 var(--scope-mono)}
+.scope-note>summary:hover,.scope-note[open]>summary{color:var(--scope-signal-strong)}
+.scope-note>:not(summary){margin:8px 0 0;max-width:96ch}
+
+/* ------------------------------------------------------------ instruments */
+.scope-mark{flex:none;display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--family,var(--scope-faint))}
+.scope-empty{margin:0;color:var(--scope-faint);font-size:13.5px}
+.scope-hint,.scope-more{font-size:13px;color:var(--scope-faint)}
+.scope-more{text-decoration:none}
+.scope-more:hover{color:var(--scope-signal-strong);text-decoration:none}
+.scope-block{min-width:0}
+.scope-block-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:12px}
+.scope-block-head h2{margin:0;font-size:14px;font-weight:650;letter-spacing:0;color:var(--scope-ink)}
+.scope-block-head h2 a{color:inherit;text-decoration:none}
+.scope-block-head h2 a:hover{color:var(--scope-signal-strong)}
+
+.scope-tip{position:fixed;z-index:1000;max-width:300px;padding:9px 12px;display:grid;gap:2px;background:#0c1724f5;border:1px solid var(--scope-line-strong);border-radius:8px;box-shadow:0 14px 40px #0009;font-size:13px;line-height:1.45;color:var(--scope-dim);pointer-events:none}
+.scope-tip[hidden]{display:none}
+.scope-tip-title{display:flex;align-items:center;gap:8px;color:var(--scope-ink);font-size:14px;font-weight:650;overflow-wrap:anywhere}
+
+/* Overview */
+.scope-hero{display:grid;grid-template-columns:minmax(0,1.04fr) minmax(330px,.96fr);gap:20px 44px;align-items:start;margin-top:4px}
+.scope-hero-dial{min-width:0;display:grid;justify-items:center;gap:14px}
+.scope-dial{position:relative;width:100%;max-width:700px;margin:0;aspect-ratio:1}
+.scope-dial-canvas{display:block;width:100%;height:100%;touch-action:pan-y}
+.scope-dial-status{position:absolute;left:0;top:0;max-width:44%;font-size:13px;line-height:1.4;color:var(--scope-dim)}
+.scope-dial-hint{position:absolute;right:0;top:0;max-width:27%;margin:0;text-align:right;font-size:12px;line-height:1.4;color:var(--scope-faint)}
+.scope-continents{list-style:none;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px 18px;width:100%;max-width:700px;margin:0;padding:0}
+.scope-continents a{display:grid;gap:1px;padding:4px 0 7px;position:relative;color:inherit;text-decoration:none;border-bottom:1px solid var(--scope-line)}
+.scope-continents strong{font-family:var(--scope-display);font-size:25px;font-weight:680;line-height:1;color:var(--scope-ink)}
+.scope-continents span{font-size:12px;color:var(--scope-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scope-continents i{position:absolute;left:0;bottom:-1px;height:2px;border-radius:2px;background:var(--scope-signal)}
+.scope-continents a:hover strong{color:var(--scope-signal-strong)}
+.scope-hero-side{min-width:0;display:grid;gap:30px;align-content:start;padding-top:6px}
+
+/* The four headline counts read as one instrument line, not four cards. */
+.scope-hero .summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin:0;border:0;background:none;box-shadow:none;border-radius:0}
+.scope-hero .summary-grid>.metric{display:grid;gap:5px;align-content:start;min-height:0;padding:0 14px 2px;border:0;border-left:1px solid var(--scope-line);border-radius:0;background:none;box-shadow:none;text-decoration:none}
+.scope-hero .summary-grid>.metric:first-child{padding-left:0;border-left:0}
+.scope-hero .summary-grid>.metric::before,.scope-hero .summary-grid>.metric::after{content:none}
+.scope-hero .summary-grid>.metric{position:relative}
+.scope-hero .metric .metric-icon{position:absolute;top:2px;right:10px;width:auto;height:auto;border:0;background:none;font-size:13px;line-height:1;color:var(--scope-faint)}
+.scope-hero .metric .meta{order:3;font-size:12px;line-height:1.35;color:var(--scope-faint)}
+.scope-hero .metric .label{order:2;font-size:12.5px;color:var(--scope-dim);letter-spacing:0;text-transform:none;font-weight:500}
+.scope-hero .metric .number{order:1;font-size:clamp(40px,3.7vw,58px);line-height:.92;letter-spacing:0;color:var(--scope-ink);margin:0}
+.scope-hero .metric:hover .number{color:var(--scope-signal-strong)}
+
+.scope-families{display:grid;gap:1px}
+.scope-family{display:grid;grid-template-columns:9px minmax(0,1fr) minmax(70px,36%) 54px;align-items:center;gap:11px;width:100%;padding:6px 8px;margin:0 -8px;border:0;border-radius:7px;background:none;color:var(--scope-ink);font-size:14px;text-align:left;cursor:pointer;transition:opacity .12s,background .12s}
+.scope-family:hover,.scope-family[aria-pressed=true]{background:#ffffff0a}
+.scope-family.is-dim{opacity:.34}
+.scope-family-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scope-family-track{height:6px;border-radius:3px;background:#ffffff0b;overflow:hidden}
+.scope-family-track i{display:block;height:100%;min-width:3px;border-radius:3px;background:var(--family)}
+.scope-family-count{text-align:right;font-weight:650;font-variant-numeric:tabular-nums}
+
+.scope-state{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--scope-dim)}
+.scope-state i{width:7px;height:7px;border-radius:50%;background:var(--scope-faint)}
+.scope-stream[data-state=connected] .scope-state i{background:var(--scope-good);box-shadow:0 0 0 3px #0ca30c2e}
+.scope-stream[data-state=off] .scope-state i,.scope-stream[data-state=unknown] .scope-state i{background:var(--scope-warning)}
+.scope-stream-stage{position:relative;height:64px;border-bottom:1px solid var(--scope-line-strong)}
+.scope-stream-flow{display:block;width:100%;height:100%}
+.scope-stream-scale{position:absolute;left:0;top:0;font-size:11px;color:var(--scope-faint);pointer-events:none;font-variant-numeric:tabular-nums}
+.scope-stream-note{position:absolute;inset:0;display:grid;place-items:center;font-size:12.5px;color:var(--scope-faint);pointer-events:none}
+.scope-stream-note[hidden]{display:none}
+.scope-stream-axis{margin-bottom:14px}
+.scope-readouts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0 0}
+.scope-readouts>div{display:grid;gap:3px;min-width:0}
+.scope-readouts dd{margin:0;font-family:var(--scope-display);font-size:31px;font-weight:680;line-height:.95;color:var(--scope-ink)}
+.scope-readouts dt{font-size:12px;line-height:1.3;color:var(--scope-dim)}
+.scope-stream-matches{margin-top:16px}
+.scope-stream-track{position:relative;height:20px;border-bottom:1px solid var(--scope-line-strong)}
+.scope-stream-tick{position:absolute;bottom:0;width:3px;height:13px;margin-left:-1px;border-radius:2px 2px 0 0;background:var(--scope-signal);opacity:.78}
+.scope-stream-tick::before{content:"";position:absolute;inset:-8px -5px 0}
+.scope-stream-tick:hover,.scope-stream-tick:focus-visible{height:20px;opacity:1;background:var(--scope-signal-strong)}
+.scope-axis{display:flex;justify-content:space-between;gap:12px;margin-top:5px;font-size:12px;color:var(--scope-faint)}
+.scope-stream-latest{display:grid;gap:1px;margin-top:10px;color:var(--scope-ink);text-decoration:none;font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.scope-stream-latest small{font-weight:400}
+.scope-stream-latest small{color:var(--scope-dim);font-size:12.5px}
+.scope-stream-latest:hover{color:var(--scope-signal-strong);text-decoration:none}
+.scope-stream-latest[hidden]{display:none}
+
+.scope-band{margin-top:38px;padding-top:22px;border-top:1px solid var(--scope-line)}
+.scope-band[hidden]{display:none}
+.scope-band-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,300px);gap:20px 44px}
+.scope-constellation{margin:0}
+.scope-constellation-plot{display:block;width:100%;height:auto;max-height:470px;overflow:visible}
+.scope-star circle{fill-opacity:.92;stroke:var(--scope-night);stroke-width:.6;vector-effect:non-scaling-stroke;transition:fill-opacity .12s}
+.scope-star{transition:opacity .15s;outline:none}
+.scope-star.is-dim{opacity:.13}
+.scope-star:hover circle,.scope-star:focus-visible circle{fill-opacity:1;stroke:#f2f8ff;stroke-width:1.6}
+.scope-star-labels text{text-anchor:middle;dominant-baseline:central;font-family:var(--scope-sans);font-weight:680;fill:#06101c;pointer-events:none}
+.scope-star-captions text{text-anchor:middle;font-family:var(--scope-sans);font-weight:500;fill:var(--scope-dim);pointer-events:none}
+.scope-star-captions .scope-star-total{font-weight:700;fill:var(--scope-ink)}
+.scope-constellation text{transition:opacity .15s}
+.scope-constellation text.is-dim{opacity:.18}
+
+.scope-sheet{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px}
+.scope-shot{position:relative;display:block;aspect-ratio:16/10;overflow:hidden;border-radius:7px;background:var(--scope-plate);outline:1px solid var(--scope-line);outline-offset:-1px}
+.scope-shot img{display:block;width:100%;height:100%;object-fit:cover;object-position:top center;transition:transform .25s ease}
+.scope-shot::before{content:"";position:absolute;z-index:1;left:8px;top:8px;width:8px;height:8px;border-radius:50%;background:var(--family);box-shadow:0 0 0 2px #070c15}
+.scope-shot-caption{position:absolute;inset:auto 0 0;display:grid;gap:1px;padding:22px 9px 7px;background:linear-gradient(transparent,#060b13f2 62%);color:var(--scope-ink);font-size:12.5px;line-height:1.3;opacity:0;transition:opacity .15s}
+.scope-shot-caption strong,.scope-shot-caption small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scope-shot-caption small{color:var(--scope-dim);font-size:11px}
+.scope-shot:hover .scope-shot-caption,.scope-shot:focus-visible .scope-shot-caption{opacity:1}
+.scope-shot:hover{outline-color:var(--scope-signal)}
+.scope-shot:hover img{transform:scale(1.04)}
+
+/* Job marks: solid succeeded, hatched failed, hollow cancelled. State never rests on colour alone. */
+[data-tone=good]{--tone:var(--scope-good)}[data-tone=critical]{--tone:var(--scope-critical)}[data-tone=muted]{--tone:#62718a}[data-tone=live]{--tone:var(--scope-signal)}[data-tone=wait]{--tone:var(--scope-warning)}
+.scope-pulse,.scope-lane-mark,.scope-legend-item i{background:var(--tone,#62718a)}
+.scope-pulse[data-tone=critical],.scope-lane-mark[data-tone=critical],.scope-legend-item[data-tone=critical] i{background:repeating-linear-gradient(135deg,var(--scope-critical) 0 3px,#f2b3b3 3px 4.5px)}
+.scope-pulse[data-tone=muted],.scope-lane-mark[data-tone=muted],.scope-legend-item[data-tone=muted] i{background:none;box-shadow:inset 0 0 0 1.5px #8394ad}
+.scope-pulses{display:flex;align-items:flex-end;gap:6px;height:74px;border-bottom:1px solid var(--scope-line-strong)}
+.scope-pulse{flex:1 1 0;max-width:26px;min-height:9px;height:var(--h,40%);border-radius:4px 4px 0 0}
+.scope-pulse:hover,.scope-pulse:focus-visible{filter:brightness(1.3)}
+.scope-timeline{margin:0 0 26px;display:grid;gap:7px}
+.scope-legend{display:flex;flex-wrap:wrap;gap:6px 20px;margin-bottom:8px;font-size:13px;color:var(--scope-dim)}
+.scope-legend-item{display:inline-flex;align-items:center;gap:7px}
+.scope-legend-item i{width:11px;height:11px;border-radius:3px}
+.scope-legend-item strong{color:var(--scope-ink);font-variant-numeric:tabular-nums}
+.scope-lane{display:grid;grid-template-columns:minmax(120px,180px) minmax(0,1fr);gap:16px;align-items:center}
+.scope-lane-name{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:13.5px;color:var(--scope-ink)}
+.scope-lane-name small{color:var(--scope-faint);font-variant-numeric:tabular-nums}
+.scope-lane-track{position:relative;height:24px;margin-right:8px;border-bottom:1px solid var(--scope-line)}
+.scope-lane-mark{position:absolute;bottom:0;width:6px;margin-left:-3px;border-radius:3px 3px 0 0;box-shadow:0 0 0 1px var(--scope-night)}
+.scope-lane-break{position:absolute;top:2px;bottom:0;width:0;border-left:1px dashed var(--scope-line-strong)}
+.scope-lane-axis .scope-hint{font-size:12px}
+.panel .scope-timeline{padding:18px 19px 4px}
+.scope-lane-mark:hover,.scope-lane-mark:focus-visible{filter:brightness(1.35);z-index:1}
+
+@media(max-width:1180px){
+  .scope-hero{grid-template-columns:minmax(0,1fr)}
+  .scope-dial{max-width:620px}
+}
+@media(max-width:800px){
+  main{padding:20px 16px 36px}
+  .topbar{gap:8px}
+  .topbar-right{flex:1 1 auto;min-width:0;justify-content:flex-end;gap:8px;overflow:hidden}
+  .command-toggle{min-width:0}
+  .scope-band-split{grid-template-columns:minmax(0,1fr)}
+  .scope-continents{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .scope-hero .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:18px}
+  .scope-hero .summary-grid>.metric:nth-child(odd){padding-left:0;border-left:0}
+  .scope-readouts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .scope-family{grid-template-columns:9px minmax(0,1fr) 70px 48px}
+  .scope-dial-hint{display:none}
+  .scope-lane{grid-template-columns:minmax(0,1fr);gap:2px}
+}
+
+/* Overview ledger: the exact tables behind the instruments. */
+.scope-ledger{margin-top:38px;border-top:1px solid var(--scope-line)}
+.scope-ledger>summary{display:flex;align-items:baseline;gap:14px;padding:18px 0;cursor:pointer;list-style:none}
+.scope-ledger>summary::-webkit-details-marker{display:none}
+.scope-ledger>summary::after{content:"";margin-left:auto;align-self:center;width:8px;height:8px;border-right:1.5px solid var(--scope-dim);border-bottom:1.5px solid var(--scope-dim);transform:rotate(45deg);transition:transform .15s}
+.scope-ledger[open]>summary::after{transform:rotate(-135deg)}
+.scope-ledger>summary h2{margin:0;font-size:14px;font-weight:650;color:var(--scope-ink)}
+.scope-ledger>summary span{font-size:13px;color:var(--scope-faint)}
+.scope-ledger>summary:hover h2{color:var(--scope-signal-strong)}
+.scope-ledger-body{display:grid;gap:20px;padding-bottom:8px}
+.scope-ledger-body>*{margin:0}
+
+/* Relationship constellation */
+.scope-graph{margin:0 0 22px}
+.scope-graph-canvas{display:block;width:100%;height:clamp(420px,62vh,680px);border-block:1px solid var(--scope-line);background:radial-gradient(70% 90% at 50% 50%,#0f1c2c 0,transparent 100%);touch-action:pan-y}
+.scope-graph-legend{align-items:center;margin-bottom:12px}
+.scope-graph-legend .scope-hint{margin-left:auto}
+.scope-shape{flex:none;display:inline-block;width:11px;height:11px;background:var(--family)}
+.scope-legend-item i.scope-shape{border-radius:0}
+.scope-legend-item i.scope-shape-circle{border-radius:50%}
+.scope-shape-diamond{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
+.scope-shape-triangle{clip-path:polygon(50% 4%,100% 96%,0 96%)}
+.scope-shape-hexagon{clip-path:polygon(25% 4%,75% 4%,100% 50%,75% 96%,25% 96%,0 50%)}
+/* Instruments placed on existing pages */
+.atlas-stars{margin:6px 0 22px;padding:18px 0 4px;border-block:1px solid var(--scope-line)}
+.atlas-stars:empty{display:none}
+.scope-secondary{margin:0 0 20px}
+.scope-secondary>summary{cursor:pointer;font-size:13.5px;color:var(--scope-dim);padding:6px 0}
+.scope-secondary>summary:hover{color:var(--scope-signal-strong)}
+.scope-stream-page{margin:0 0 26px;padding-bottom:22px;border-bottom:1px solid var(--scope-line)}
+.scope-stream-page .scope-stream-stage{height:84px}
+.scope-stream-page .scope-readouts dd{font-size:44px}
+
+/* ------------------------------------------------------- menus (details) */
+.status-menu,.ls-popover{position:relative}
+.status-menu>summary,.ls-popover>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:7px;min-height:32px;padding:4px 11px;border:1px solid var(--scope-line);border-radius:8px;font-size:13px;color:var(--scope-dim);white-space:nowrap;user-select:none}
+.status-menu>summary::-webkit-details-marker,.ls-popover>summary::-webkit-details-marker{display:none}
+.status-menu>summary:after,.ls-popover>summary:after{content:'▾';font-size:10px;opacity:.7}
+.status-menu>summary:hover,.ls-popover>summary:hover,.status-menu[open]>summary,.ls-popover[open]>summary{border-color:var(--scope-line-strong);color:var(--scope-ink)}
+.status-menu-body{position:absolute;right:0;top:calc(100% + 6px);z-index:60;display:grid;gap:8px;min-width:230px;padding:12px;background:#0e1826;border:1px solid var(--scope-line-strong);border-radius:10px;box-shadow:0 18px 50px #000a}
+.status-menu-body>*{justify-self:start}
+.status-menu-body .motion-toggle{width:100%;justify-content:flex-start}
+/* The status menu holds items older rules hid on small screens; inside the menu they always show, and the menu must not be clipped. */
+.topbar .topbar-right{overflow:visible}
+.topbar .status-menu-body :is(.help-link,.private-pill){display:inline-flex;align-items:center;gap:7px}
+.topbar .status-menu-body .motion-label{display:inline}
+@media(max-width:800px){.topbar .status-menu-body{right:0;max-width:calc(100vw - 24px)}}
+/* Jump-to lives in the sidebar now: keep its label whenever the sidebar shows labels. */
+body:not(.nav-compact) .sidebar .command-toggle{width:100%;min-width:0;flex:none}
+body:not(.nav-compact) .sidebar .command-toggle :is(.command-label,kbd){display:inline}
+@media(max-width:800px){.sidebar .command-toggle{width:100%;min-width:0;flex:none}.sidebar .command-toggle :is(.command-label,kbd){display:inline}}
+.sidebar .settings-link>.nav-title{font-size:13.5px}

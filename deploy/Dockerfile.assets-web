@@ -1,0 +1,13 @@
+ARG LEAKSCOPE_APP_BASE=leakscope:4.1.1-org-qa-20261108
+FROM ${LEAKSCOPE_APP_BASE}
+USER 0
+COPY requirements.txt /app/requirements.txt
+RUN pip install --require-hashes -r /app/requirements.txt
+COPY leakscope /app/leakscope
+COPY leakscope_app /app/leakscope_app
+COPY tests /app/tests
+RUN chmod -R a+rX /app/leakscope /app/leakscope_app /app/tests \
+    && LEAKSCOPE_SECRET_KEY=static-build-only LEAKSCOPE_CONFIG_FILE=/nonexistent \
+    LEAKSCOPE_DATA_DIR=/tmp/leakscope-web-static python manage.py collectstatic --noinput \
+    && rm -rf /tmp/leakscope-web-static
+USER 501:20

@@ -1,0 +1,24 @@
+.venv
+.runtime/
+__pycache__/
+*.py[cod]
+db.sqlite3
+db.sqlite3-*
+celerybeat-schedule*
+.env
+config.json
+celerybeat.pid
+
+.worktrees/
+.venv*/
+.pytest_cache/
+.coverage
+htmlcov/
+node_modules
+
+.serena/
+.playwright-mcp/
+
+# Built by collectstatic from ui_bundles.py source modules
+leakscope_app/static/css/workspace_bundle.css
+leakscope_app/static/js/leakscope/workspace_bundle.js

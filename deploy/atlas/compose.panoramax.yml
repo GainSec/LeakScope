@@ -1,0 +1,127 @@
+# Optional private imagery companion; load after the main LeakScope compose files.
+# No host ports. The app's read-only imagery proxy uses http://panoramax:5000/api.
+x-atlas-panoramax: &atlas-panoramax
+  image: panoramax/api:2.17.0@sha256:dca7ee0df50c0409c1c6363533ed25e7f385e2c2f095963d9238c33af02fe5dd
+  platform: linux/amd64
+  profiles: [imagery]
+  user: "${LEAKSCOPE_UID:-501}:${LEAKSCOPE_GID:-20}"
+  init: true
+  restart: unless-stopped
+  cpus: 0.75
+  mem_limit: 512m
+  pids_limit: 128
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  environment: &atlas-panoramax-env
+    LOGNAME: leakscope-panoramax
+    DB_URL: "postgres://panoramax:${LEAKSCOPE_PANORAMAX_DB_PASSWORD:?Set a private URL-safe Panoramax database password}@panoramax-db:5432/panoramax"
+    FS_URL: /data/geovisio
+    FLASK_SECRET_KEY: "${LEAKSCOPE_PANORAMAX_SECRET_KEY:?Set a private random Panoramax session-signing key}"
+    PICTURE_PROCESS_THREADS_LIMIT: "0"
+    PICTURE_PROCESS_DERIVATES_STRATEGY: PREPROCESS
+    API_BLUR_URL: ""
+    API_FORCE_AUTH_ON_UPLOAD: "true"
+    API_REGISTRATION_IS_OPEN: "false"
+    API_WEBSITE_URL: "false"
+    DB_MIN_CNX: "0"
+    DB_MAX_CNX: "3"
+    DB_STATEMENT_TIMEOUT: "30000"
+    NB_API_THREADS: "2"
+    XDG_CACHE_HOME: /tmp/cache
+    OMP_NUM_THREADS: "1"
+    OPENBLAS_NUM_THREADS: "1"
+  volumes:
+    - type: bind
+      source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/artifacts/atlas/panoramax/pictures
+      target: /data/geovisio
+      bind:
+        create_host_path: false
+  networks:
+    - panoramax-backend
+  logging: &atlas-panoramax-logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  panoramax-db:
+    image: postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+    platform: linux/amd64
+    profiles: [imagery]
+    user: "999:999"
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 96
+    environment:
+      POSTGRES_DB: panoramax
+      POSTGRES_USER: panoramax
+      POSTGRES_PASSWORD: "${LEAKSCOPE_PANORAMAX_DB_PASSWORD:?Set a private URL-safe Panoramax database password}"
+    command: [postgres, -c, shared_buffers=32MB, -c, max_connections=30]
+    volumes:
+      - type: volume
+        source: panoramax-db
+        target: /var/lib/postgresql/data
+    networks:
+      - panoramax-backend
+    healthcheck:
+      test: [CMD-SHELL, 'PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -tAc "SELECT 1" | grep -qx 1']
+      interval: 15s
+      timeout: 15s
+      start_period: 60s
+      retries: 12
+    logging: *atlas-panoramax-logging
+
+  panoramax-migrate:
+    <<: *atlas-panoramax
+    restart: "no"
+    command: [db-upgrade]
+    depends_on:
+      panoramax-db:
+        condition: service_healthy
+
+  panoramax:
+    <<: *atlas-panoramax
+    command: [api]
+    networks:
+      - default
+      - panoramax-backend
+    depends_on:
+      panoramax-db:
+        condition: service_healthy
+      panoramax-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; response=urllib.request.urlopen('http://127.0.0.1:5000/api', timeout=4); assert response.status == 200"]
+      interval: 20s
+      timeout: 8s
+      start_period: 60s
+      retries: 6
+
+  panoramax-worker:
+    <<: *atlas-panoramax
+    command: [picture-worker]
+    environment:
+      <<: *atlas-panoramax-env
+      PICTURE_PROCESS_THREADS_LIMIT: "1"
+      DB_MIN_CNX: "1"
+    depends_on:
+      panoramax-db:
+        condition: service_healthy
+      panoramax-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python3, -c, "import os; os.kill(1, 0)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+networks:
+  default: {}
+  panoramax-backend:
+    internal: true
+
+volumes:
+  panoramax-db: {}

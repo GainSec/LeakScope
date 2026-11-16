@@ -1,0 +1,926 @@
+{
+  "schema_version": 1,
+  "curated_on": "2026-11-10",
+  "catalog_keys": [
+    "activemq",
+    "ads",
+    "aerospike",
+    "amaru",
+    "amazonbe",
+    "amazons3be",
+    "amqp",
+    "angular",
+    "arangodb",
+    "artifactory",
+    "azureblob",
+    "bacnet",
+    "cardano",
+    "cardanonode",
+    "cassandra",
+    "ceph",
+    "cephrgw",
+    "cipio",
+    "clickhouse",
+    "coap",
+    "codesys",
+    "codesys_webvisu",
+    "comet_websensor",
+    "consul",
+    "couchbase",
+    "couchdb",
+    "cratedb",
+    "db2",
+    "delta_as228t_a",
+    "delta_modbus",
+    "dirs",
+    "dnp3",
+    "domoticz",
+    "druid",
+    "elastic",
+    "esphome",
+    "etcd",
+    "ethernetip",
+    "fins",
+    "firebird",
+    "fox",
+    "ftp",
+    "gcsbucket",
+    "gitea",
+    "gitlab",
+    "gogs",
+    "grafana",
+    "grpc",
+    "hana",
+    "hartip",
+    "hbase",
+    "hdfs",
+    "homeassistant",
+    "iec104",
+    "iec61850",
+    "influxdb",
+    "informix",
+    "ipfs",
+    "jenkins",
+    "kaco_blueplanet",
+    "kafka",
+    "keba_kecontact",
+    "keys",
+    "kibana",
+    "lantronix",
+    "lantronix-config",
+    "maxdb",
+    "melsec",
+    "memcached",
+    "milvus",
+    "minio",
+    "modbus",
+    "monetdb",
+    "mongo",
+    "mongoexpress",
+    "mqtt",
+    "mssql",
+    "mysql",
+    "nats",
+    "neo4j",
+    "nexus",
+    "nfs",
+    "niagara4_bacnet",
+    "nodered",
+    "octoprint",
+    "onvif",
+    "opcua",
+    "openhab",
+    "opensearch",
+    "opentsdb",
+    "oracle",
+    "ospa_pool",
+    "pcworx",
+    "pinot",
+    "plc",
+    "postgresql",
+    "presto",
+    "proconos",
+    "prometheus",
+    "pulsar",
+    "pump_status_hmi",
+    "qdrant",
+    "qnap",
+    "questdb",
+    "rabbitmq",
+    "redis",
+    "registry",
+    "rethink",
+    "riak",
+    "rockware_magicimm",
+    "rsync",
+    "rtsp",
+    "s7",
+    "scylla",
+    "seaweedfs",
+    "sftp",
+    "shelly",
+    "smb",
+    "smux",
+    "solr",
+    "sonarqube",
+    "srtp",
+    "stomp",
+    "swagger",
+    "swift",
+    "synology",
+    "tasmota",
+    "thingsboard",
+    "timescaledb",
+    "tridium_bacnet",
+    "trino",
+    "upnp",
+    "vertica",
+    "vertx-edge",
+    "victoriametrics",
+    "vnc",
+    "wago_hmi",
+    "weaviate",
+    "webdav",
+    "webhdfs",
+    "yarn",
+    "zigbee2mqtt",
+    "zookeeper"
+  ],
+  "notice": "Brand marks identify technologies only; their trademarks remain with their respective owners. Simple Icons artwork is distributed under CC0-1.0; upstream brand licenses/guidelines are retained per asset. Generic emblems are original CC0 drawings and are not vendor logos. Download links are optional distribution/install landing pages; no action is executed by browsing.",
+  "packages": [
+    {
+      "name": "simple-icons",
+      "version": "16.0.0",
+      "tarball": "https://registry.npmjs.org/simple-icons/-/simple-icons-16.0.0.tgz",
+      "integrity": "sha512-FPA/dxEy0dfXplKhPhqFI6KoPKAhe7t75emZ5i1T1vmqCYwboCqVNezRWaMmPkBazpHKmMAnaUYxoYsfRoDnZQ=="
+    },
+    {
+      "name": "simple-icons",
+      "version": "11.15.0",
+      "tarball": "https://registry.npmjs.org/simple-icons/-/simple-icons-11.15.0.tgz",
+      "integrity": "sha512-uDAdtIGc56YJiGpdzImENY4E+5qtHEorW11KoXiwDj4u4YSY74G+q/a9idlY8iEqrjghHGkZ/ras0jRT7JpDTQ=="
+    }
+  ],
+  "assets": {
+    "aerospike.svg": {
+      "kind": "brand",
+      "source": "https://pages.aerospike.com/rs/aerospike/images/Acid_Whitepaper.pdf",
+      "package": "simple-icons@11.15.0",
+      "package_path": "icons/aerospike.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "a7a45da19947333cc14e7252a073d2033d30962f6da28d999715736c7fac60c1"
+    },
+    "angular.svg": {
+      "kind": "brand",
+      "source": "https://angular.dev/press-kit",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/angular.svg",
+      "license": "CC0-1.0",
+      "brand_license": {
+        "type": "CC-BY-4.0"
+      },
+      "guidelines": "https://angular.dev/press-kit",
+      "sha256": "16bad694769180d22b8a4ed790c4a1b1f114d00eb8f47d11b6e772af4f9ea8a1"
+    },
+    "apachecassandra.svg": {
+      "kind": "brand",
+      "source": "https://www.apache.org/logos",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/apachecassandra.svg",
+      "license": "CC0-1.0",
+      "brand_license": {
+        "type": "Apache-2.0"
+      },
+      "guidelines": "https://www.apache.org/foundation/marks",
+      "sha256": "610e4fee56ad0a6ede45a5df8702fb744a0aa434085969da9100c8bacfe8b3d7"
+    },
+    "apachecouchdb.svg": {
+      "kind": "brand",
+      "source": "https://apache.org/logos",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/apachecouchdb.svg",
+      "license": "CC0-1.0",
+      "brand_license": {
+        "type": "Apache-2.0"
+      },
+      "guidelines": "https://www.apache.org/foundation/marks",
+      "sha256": "7038ad2ca6eaae7710f2d992d10dc32b723c2fe33c34fb24168bcf2c09d92edf"
+    },
+    "apachedruid.svg": {
+      "kind": "brand",
+      "source": "https://apache.org/logos",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/apachedruid.svg",
+      "license": "CC0-1.0",
+      "brand_license": {
+        "type": "Apache-2.0"
+      },
+      "guidelines": "https://www.apache.org/foundation/marks",
+      "sha256": "1928979008d323bcf63fe3f43136e542795a4b6646a535face56584a392e7eb4"
+    },
+    "apachehadoop.svg": {
+      "kind": "brand",
+      "source": "https://apache.org/logos",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/apachehadoop.svg",
+      "license": "CC0-1.0",
+      "brand_license": {
+        "type": "Apache-2.0"
+      },
+      "guidelines": "https://www.apache.org/foundation/marks",
+      "sha256": "7a43567a25db053e1b87106710e0072f7a196049d8ea2dfcead69cc3b88913cc"
+    },
+    "apachehbase.svg": {
+      "kind": "brand",
+      "source": "https://apache.org/logos",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/apachehbase.svg",
+      "license": "CC0-1.0",
+      "brand_license": {
+        "type": "Apache-2.0"
+      },
+      "guidelines": "https://www.apache.org/foundation/marks",
+      "sha256": "943f45e3603ab139ea490f3ecb4a2acdfb3c06f021b1b9348dd1b6cd8106ed4d"
+    },
+    "apachekafka.svg": {
+      "kind": "brand",
+      "source": "https://apache.org/logos",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/apachekafka.svg",
+      "license": "CC0-1.0",
+      "brand_license": {
+        "type": "Apache-2.0"
+      },
+      "guidelines": "https://www.apache.org/foundation/marks",
+      "sha256": "e64804c91c53daee5ab4c83f466b90b3daca2e219d91deab06e68ccae06d7d3d"
+    },
+    "apachepulsar.svg": {
+      "kind": "brand",
+      "source": "https://apache.org/logos",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/apachepulsar.svg",
+      "license": "CC0-1.0",
+      "brand_license": {
+        "type": "Apache-2.0"
+      },
+      "guidelines": "https://www.apache.org/foundation/marks",
+      "sha256": "2dd164e89af89410e74c96e43ce8d3d8c969ef0d561c34dde1098944af1f0d9d"
+    },
+    "apachesolr.svg": {
+      "kind": "brand",
+      "source": "https://apache.org/logos",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/apachesolr.svg",
+      "license": "CC0-1.0",
+      "brand_license": {
+        "type": "Apache-2.0"
+      },
+      "guidelines": "https://www.apache.org/foundation/marks",
+      "sha256": "a82c58f224742455db9da2862220372dde651962418c595ebb6daff97bc51508"
+    },
+    "arangodb.svg": {
+      "kind": "brand",
+      "source": "https://www.arangodb.com/resources/logos",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/arangodb.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.arangodb.com/resources/logos",
+      "sha256": "cd076ea44e48c0044bb0f98bf18f7cbc45e7c79f4785deb78fcac1c0288e21fd"
+    },
+    "ceph.svg": {
+      "kind": "brand",
+      "source": "https://github.com/ceph/ceph/blob/b106a03dcddaee80493825e85bc5e399ab4d8746/src/pybind/mgr/dashboard/frontend/src/assets/Ceph_Logo.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/ceph.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "512c9abcd4d1bba85d3e14c88e38522c7277d18287a2e4ad6efa6f8694278139"
+    },
+    "clickhouse.svg": {
+      "kind": "brand",
+      "source": "https://github.com/ClickHouse/ClickHouse/blob/12bd453a43819176d25ecf247033f6cb1af54beb/website/images/logo-clickhouse.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/clickhouse.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "56b721320616172170bb817a949dd88f71a52254b07caeec6589d0ff9d363cb5"
+    },
+    "consul.svg": {
+      "kind": "brand",
+      "source": "https://www.hashicorp.com/brand",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/consul.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.hashicorp.com/brand",
+      "sha256": "3c008800f6c98fd81c6f0e6494f5033cf5a4ca8e6e36b7fcab7382dc1ae0fffd"
+    },
+    "couchbase.svg": {
+      "kind": "brand",
+      "source": "https://www.couchbase.com",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/couchbase.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "8b6368c1d5c6e4c67febdeeec038b9459f5050ece6687f321cb5dfb0cc01e247"
+    },
+    "cratedb.svg": {
+      "kind": "brand",
+      "source": "https://github.com/crate/crate-docs-theme/blob/cbd734b3617489ca937f35e30f37f3f6c1870e1f/src/crate/theme/rtd/crate/static/images/crate-logo.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/cratedb.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "4cc74e7396ea0175afc8942c1dc7710fde27d730589c27e6efe2713fcf917534"
+    },
+    "elasticsearch.svg": {
+      "kind": "brand",
+      "source": "https://www.elastic.co/brand",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/elasticsearch.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "698802b0b724880c41eb3fa8715f29891debf93a85d8fb71e39f230a6a37f727"
+    },
+    "esphome.svg": {
+      "kind": "brand",
+      "source": "https://esphome.io",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/esphome.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "334e409f230c4d00de63cb165fdd57dfcac9a8033e720e9f2f0058f253825041"
+    },
+    "etcd.svg": {
+      "kind": "brand",
+      "source": "https://cncf-branding.netlify.app/projects/etcd/",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/etcd.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "200ebdf787f06e60a0ddf7bb36688a23ab3f7328ea34ee7fb4042ca26c41d836"
+    },
+    "generic-database.svg": {
+      "kind": "generic",
+      "source": "LeakScope original neutral network-node drawing; not a technology/vendor logo",
+      "license": "CC0-1.0",
+      "sha256": "165ca73db21c1351cbe60290fd74dfab5e940eabb15468ddc4ce2f8a11e345d2"
+    },
+    "generic-iot.svg": {
+      "kind": "generic",
+      "source": "LeakScope original neutral network-node drawing; not a technology/vendor logo",
+      "license": "CC0-1.0",
+      "sha256": "165ca73db21c1351cbe60290fd74dfab5e940eabb15468ddc4ce2f8a11e345d2"
+    },
+    "generic-messaging.svg": {
+      "kind": "generic",
+      "source": "LeakScope original neutral network-node drawing; not a technology/vendor logo",
+      "license": "CC0-1.0",
+      "sha256": "165ca73db21c1351cbe60290fd74dfab5e940eabb15468ddc4ce2f8a11e345d2"
+    },
+    "generic-ot.svg": {
+      "kind": "generic",
+      "source": "LeakScope original neutral network-node drawing; not a technology/vendor logo",
+      "license": "CC0-1.0",
+      "sha256": "165ca73db21c1351cbe60290fd74dfab5e940eabb15468ddc4ce2f8a11e345d2"
+    },
+    "generic-storage.svg": {
+      "kind": "generic",
+      "source": "LeakScope original neutral network-node drawing; not a technology/vendor logo",
+      "license": "CC0-1.0",
+      "sha256": "165ca73db21c1351cbe60290fd74dfab5e940eabb15468ddc4ce2f8a11e345d2"
+    },
+    "generic-web.svg": {
+      "kind": "generic",
+      "source": "LeakScope original neutral network-node drawing; not a technology/vendor logo",
+      "license": "CC0-1.0",
+      "sha256": "165ca73db21c1351cbe60290fd74dfab5e940eabb15468ddc4ce2f8a11e345d2"
+    },
+    "gitea.svg": {
+      "kind": "brand",
+      "source": "https://github.com/go-gitea/gitea/blob/e0c753e770a64cda5e3900aa1da3d7e1f3263c9a/assets/logo.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/gitea.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "72e13379b6f0ddfb083558f6c7d0212c311860949f07d7295269bc186f8bf5d8"
+    },
+    "gitlab.svg": {
+      "kind": "brand",
+      "source": "https://about.gitlab.com/press/press-kit/",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/gitlab.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://about.gitlab.com/handbook/marketing/corporate-marketing/brand-activation/trademark-guidelines/",
+      "sha256": "3bbfcd2707b9cd5bc6d68d561da605c520a707ceaecf3912aede560bb0990e27"
+    },
+    "googlecloudstorage.svg": {
+      "kind": "brand",
+      "source": "https://cloud.google.com/icons",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/googlecloudstorage.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://about.google/brand-resource-center",
+      "sha256": "d61f1a944eb7c26707d28f7b0e41e1333cd29ce058654dfc001ea2bd19def019"
+    },
+    "grafana.svg": {
+      "kind": "brand",
+      "source": "https://grafana.com",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/grafana.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "fd70ea7298d67665cae32bdf1721fa7bd0b6b79b6f7cd8da1e3f77c97bbcdcc9"
+    },
+    "homeassistant.svg": {
+      "kind": "brand",
+      "source": "https://github.com/home-assistant/assets/blob/0f69676da79c3881e7dfca6d6c0a5739f88273d8/logo/home-assistant-logo.zip",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/homeassistant.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://design.home-assistant.io/#brand/logo",
+      "sha256": "a38346804cf53f84d217e80b13210dd5f541d4fa3453b029e0e552b860b70349"
+    },
+    "ibm.svg": {
+      "kind": "brand",
+      "source": "https://www.ibm.com/design/language/ibm-logos/8-bar/",
+      "package": "simple-icons@11.15.0",
+      "package_path": "icons/ibm.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.ibm.com/design/language/ibm-logos/8-bar/",
+      "sha256": "feb7105b25bac83d04fce6364ca2dffada3c763fb4a755bb064f8ad1f5d74b08"
+    },
+    "influxdb.svg": {
+      "kind": "brand",
+      "source": "https://influxdata.github.io/branding/logo/downloads/",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/influxdb.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://influxdata.github.io/branding/logo/usage/",
+      "sha256": "1b58e02a49baf272eb7effbfa29d7641ba7166ad049564ba13eb919302b7409a"
+    },
+    "ipfs.svg": {
+      "kind": "brand",
+      "source": "https://github.com/ipfs-inactive/logo/tree/73169b495332415b174ac2f37ec27c4b2ee8da83",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/ipfs.svg",
+      "license": "CC0-1.0",
+      "brand_license": {
+        "type": "CC-BY-SA-3.0"
+      },
+      "guidelines": null,
+      "sha256": "d827eb6d911ba332bc33376e405b57249fda80e06fc22f7b785897b988a6ebda"
+    },
+    "jenkins.svg": {
+      "kind": "brand",
+      "source": "https://get.jenkins.io/art/",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/jenkins.svg",
+      "license": "CC0-1.0",
+      "brand_license": {
+        "type": "CC-BY-SA-3.0"
+      },
+      "guidelines": "https://www.jenkins.io/press/",
+      "sha256": "c382bb16bde373c903fd9f2b535b0f10395e4131073ed7b0c786990622b8e8be"
+    },
+    "jfrog.svg": {
+      "kind": "brand",
+      "source": "https://jfrog.com/brand-guidelines",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/jfrog.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://jfrog.com/brand-guidelines",
+      "sha256": "95086a2992c317d9895e66abd30b35871fb0e2c6c61a983b26339a3227fb5bad"
+    },
+    "kibana.svg": {
+      "kind": "brand",
+      "source": "https://www.elastic.co/brand",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/kibana.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "5e484f5ca911bb2e05da2d23a5bdcb7957dcbbc6110fd7962f0ca4892403e65e"
+    },
+    "memcached.jpg": {
+      "kind": "brand",
+      "source": "https://memcached.org/images/memcached_banner75.jpg",
+      "license": "Upstream brand mark; no separate logo license stated; copyright and trademark retained by project owner",
+      "modification": "None; original published artwork",
+      "source_sha256": "98838db7d66a69f4920095f00d94605141b1be15069c5ff47d08b40cef005369",
+      "sha256": "98838db7d66a69f4920095f00d94605141b1be15069c5ff47d08b40cef005369"
+    },
+    "microsoftazure.svg": {
+      "kind": "brand",
+      "source": "https://github.com/microsoft/vscode-azureresourcegroups/blob/0a06362e82170fd7f8dc2496286825b1a69cc42b/resources/azure.svg",
+      "package": "simple-icons@11.15.0",
+      "package_path": "icons/microsoftazure.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks",
+      "sha256": "6721a5904e74681281d2a2b0c42c11636c302827c2c8828f65ae68a46970af94"
+    },
+    "microsoftsqlserver.svg": {
+      "kind": "brand",
+      "source": "https://de.wikipedia.org/wiki/Datei:Microsoft_SQL_Server_Logo.svg",
+      "package": "simple-icons@11.15.0",
+      "package_path": "icons/microsoftsqlserver.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "f235629b74550663e55cb2ff1ddefd8780157e2e874244f31d75ffb34f79eff8"
+    },
+    "milvus.svg": {
+      "kind": "brand",
+      "source": "https://github.com/milvus-io/artwork/blob/e30bffa2b0632b0d4cefcdd4e1a2c09fee5b0d28/icon/black/milvus-icon-black.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/milvus.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "36ae12b9f51849ce40363b8d3a2ee510b88ca248a4d87fd57c0f1da4a3ff8064"
+    },
+    "minio.svg": {
+      "kind": "brand",
+      "source": "https://min.io",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/minio.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://min.io/logo",
+      "sha256": "02b56d9139142b63226dac1e07064b56d4554b7c335a01931e9ebfa84d3dc812"
+    },
+    "mongodb.svg": {
+      "kind": "brand",
+      "source": "https://www.mongodb.com/pressroom",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/mongodb.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "cf259f556e99f2df9056e60f34ef0eed3eeb4d096dec34f251b0f7a3a5c76fdd"
+    },
+    "mqtt.svg": {
+      "kind": "brand",
+      "source": "https://mqtt.org",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/mqtt.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "323552cdc91e166f4a476e0e0bfc4108e8a1b68a9f9ff297b475299ac9d6bd6b"
+    },
+    "mysql.svg": {
+      "kind": "brand",
+      "source": "https://www.mysql.com/about/legal/logos.html",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/mysql.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.mysql.com/about/legal/logos.html",
+      "sha256": "df58ab1e11500e6862bb2c53fbbe688e21b40758cd09090f2283649268f27872"
+    },
+    "natsdotio.svg": {
+      "kind": "brand",
+      "source": "https://github.com/cncf/artwork/blob/88bc5e7a0cc7f3770ba6edddc92e1ab8a6006171/projects/nats/icon/black/nats-icon-black.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/natsdotio.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "f8f9b1a29a343e53ca52c2ed76627184a50beb24a32d229cd0ae2f6d3bb2c3ed"
+    },
+    "neo4j.svg": {
+      "kind": "brand",
+      "source": "https://neo4j.com/brand/#logo",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/neo4j.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://neo4j.com/brand/#logo",
+      "sha256": "2997fd7204a968e45b151832b43318aee5947902734376aa4be0a6830ea0594b"
+    },
+    "nodered.svg": {
+      "kind": "brand",
+      "source": "https://nodered.org/about/resources/",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/nodered.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "1955f2cceb9f02d50712771356a6a8ed686883c8ad673c1a58b12f711c41b5ac"
+    },
+    "octoprint.svg": {
+      "kind": "brand",
+      "source": "https://github.com/OctoPrint/OctoPrint/blob/53b9b6185781c07e8c4744a6e28462e96448f249/src/octoprint/static/img/mask.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/octoprint.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "bceba2d36db751f36524c80caef3c6f30c1b61814cf9b23315f945c5f3117a72"
+    },
+    "openhab.svg": {
+      "kind": "brand",
+      "source": "https://www.openhab.org/artwork.html",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/openhab.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.openhab.org/about/trademark.html",
+      "sha256": "d6e7ba48d94e68f4cd7c22ec765a5096b9e2785b21432820868f66d914616b9c"
+    },
+    "opensearch.svg": {
+      "kind": "brand",
+      "source": "https://opensearch.org/trademark-brand-policy.html",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/opensearch.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://opensearch.org/trademark-brand-policy.html",
+      "sha256": "01601179a41447124e39c41ce46cec0ce18c7cdef77293b8eb070e0d93f1bee7"
+    },
+    "openstack.svg": {
+      "kind": "brand",
+      "source": "https://www.openstack.org/brand/openstack-logo/",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/openstack.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.openstack.org/brand/openstack-logo/",
+      "sha256": "31c01a5adb34f45ae3ae9f6fcdaaca2ee6ebabc316d7855d74bae36dc7a3eee2"
+    },
+    "oracle.svg": {
+      "kind": "brand",
+      "source": "https://www.oracle.com/opn/index.html",
+      "package": "simple-icons@11.15.0",
+      "package_path": "icons/oracle.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.oracle.com/legal/logos.html",
+      "sha256": "620848857c018ae7da63607c228c1ec35712a84784953cc57764ff54b3210a80"
+    },
+    "postgresql.svg": {
+      "kind": "brand",
+      "source": "https://wiki.postgresql.org/wiki/Logo",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/postgresql.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.postgresql.org/about/policies/trademarks/",
+      "sha256": "bc45b1c56d0b1501dea387dbec4fda450d2ebc35244a620791815509d8c41dba"
+    },
+    "presto.svg": {
+      "kind": "brand",
+      "source": "https://github.com/prestodb/presto/blob/414ab2a6bbdcca6479c2615b048920adac34dd20/presto-docs/src/main/resources/logo/web/fb/dark-blue/Presto_FB_Lockups_DARKBLUE_BG-14.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/presto.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "b4e33e573b2271b74f18c4fd6881ee618333917d4d2bf03cca734043af3e74a8"
+    },
+    "prometheus.svg": {
+      "kind": "brand",
+      "source": "https://prometheus.io",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/prometheus.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "aae7efa90a77c233d051d1d5a8b1ed9e78f39d357364be8c2f1d9383a476d027"
+    },
+    "protocol-iot.svg": {
+      "kind": "protocol",
+      "source": "LeakScope original neutral network-node drawing; not a technology/vendor logo",
+      "license": "CC0-1.0",
+      "sha256": "5fe6621951ebebcef2c250721f1537b34041be9380076fe9d32be6841b16056c"
+    },
+    "protocol-messaging.svg": {
+      "kind": "protocol",
+      "source": "LeakScope original neutral network-node drawing; not a technology/vendor logo",
+      "license": "CC0-1.0",
+      "sha256": "5fe6621951ebebcef2c250721f1537b34041be9380076fe9d32be6841b16056c"
+    },
+    "protocol-ot.svg": {
+      "kind": "protocol",
+      "source": "LeakScope original neutral network-node drawing; not a technology/vendor logo",
+      "license": "CC0-1.0",
+      "sha256": "5fe6621951ebebcef2c250721f1537b34041be9380076fe9d32be6841b16056c"
+    },
+    "protocol-storage.svg": {
+      "kind": "protocol",
+      "source": "LeakScope original neutral network-node drawing; not a technology/vendor logo",
+      "license": "CC0-1.0",
+      "sha256": "5fe6621951ebebcef2c250721f1537b34041be9380076fe9d32be6841b16056c"
+    },
+    "protocol-web.svg": {
+      "kind": "protocol",
+      "source": "LeakScope original neutral network-node drawing; not a technology/vendor logo",
+      "license": "CC0-1.0",
+      "sha256": "5fe6621951ebebcef2c250721f1537b34041be9380076fe9d32be6841b16056c"
+    },
+    "qdrant.svg": {
+      "kind": "brand",
+      "source": "https://qdrant.tech/img/qdrant-logo-red-black.svg",
+      "license": "Upstream brand mark; no separate logo license stated; copyright and trademark retained by project owner",
+      "modification": "None; original published artwork",
+      "source_sha256": "1617c15a3039cbf7b040227c4aa2ed216c8e80bf4d3da1958682ed38e9f295c1",
+      "sha256": "1617c15a3039cbf7b040227c4aa2ed216c8e80bf4d3da1958682ed38e9f295c1"
+    },
+    "qnap.svg": {
+      "kind": "brand",
+      "source": "https://marketing.qnap.com/resource/qnap-logo-k100",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/qnap.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://marketing.qnap.com/resource/qnap-brand-logo-guideline",
+      "sha256": "7103a843688cb6767d663dd31264a279276ac5f2fcbd72c1418fcb71666da162"
+    },
+    "questdb.svg": {
+      "kind": "brand",
+      "source": "https://questdb.com/images/questdb-logo-themed.svg",
+      "license": "Upstream brand mark; no separate logo license stated; copyright and trademark retained by project owner",
+      "modification": "Removed dark-mode media rule so text remains readable on a fixed light logo plate; geometry unchanged",
+      "source_sha256": "82ff757fa254dac87bfae34d5bce5399dd4a333f4ee21ea1d41e8593532f6a53",
+      "sha256": "b4784289e45e3fe1be14ec6fde0bd5aa111f8ffa84db13eb8bbffc5dea891e30"
+    },
+    "rabbitmq.svg": {
+      "kind": "brand",
+      "source": "https://www.rabbitmq.com",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/rabbitmq.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.rabbitmq.com/trademark-guidelines.html",
+      "sha256": "449b269ad68813ee98dc472d8aa5c15a0c42111030fdb0cddcdb6ec42308cedf"
+    },
+    "redis.svg": {
+      "kind": "brand",
+      "source": "https://redis.io/brand-guidelines",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/redis.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://redis.io/brand-guidelines",
+      "sha256": "4245419834dd111d83a8ed645a2e305c67faa0af5c5b864eb5f0991de156034c"
+    },
+    "sap.svg": {
+      "kind": "brand",
+      "source": "https://www.sap.com",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/sap.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "3c308900c4fadd5e6a43ed304d698f2db9a8f4ecd43827760a4461cb0309052f"
+    },
+    "scylladb.svg": {
+      "kind": "brand",
+      "source": "https://www.scylladb.com/media-kit",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/scylladb.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.scylladb.com/media-kit",
+      "sha256": "10fc3b368e9a1dce3497a4a261cbdc77dba0991f039998bb658ac0de566fcb28"
+    },
+    "shelly.svg": {
+      "kind": "brand",
+      "source": "https://shelly.com",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/shelly.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "3e8c24205b84d51d5f3119060096f43aef54465975d37a981ec47e420359835f"
+    },
+    "siemens.svg": {
+      "kind": "brand",
+      "source": "https://siemens.com",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/siemens.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "4031b347a38392f1f5a1222528d87f0f53c2597ac74b001b6388101ad0583dab"
+    },
+    "sonarqubeserver.svg": {
+      "kind": "brand",
+      "source": "https://www.sonarsource.com/company/press-kit",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/sonarqubeserver.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "5f113654dbfb33ec2fce7287bb2591a67613f0b7ebd0e4b85db9c6be2ce2918a"
+    },
+    "sonatype.svg": {
+      "kind": "brand",
+      "source": "https://www.sonatype.com/company/press-kit",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/sonatype.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.sonatype.com/company/press-kit",
+      "sha256": "0f6fe7d170b99dd90a39655756e30bdd86ad7a2aa3099abd45867dc6ff42eac4"
+    },
+    "swagger.svg": {
+      "kind": "brand",
+      "source": "https://swagger.io",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/swagger.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "5cf76cebebfa6cf05f9dd9cd28a3999539492b57351ace86bd434c24382aec6e"
+    },
+    "synology.svg": {
+      "kind": "brand",
+      "source": "https://www.synology.com/en-global/company/branding",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/synology.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://www.synology.com/en-global/company/branding",
+      "sha256": "330a540e2f1a021a539b8541a729cc472d7a5cdd004a25881142dda64cdd6cbc"
+    },
+    "tasmota.svg": {
+      "kind": "brand",
+      "source": "https://github.com/tasmota/docs/blob/f9ad71612681d85f3b21406c7defa86b3eaa6bb9/docs/images/symbol.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/tasmota.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "12e347a4aaef9e9a9374318c4cf9387a25114ba821fdacbe619a9e8d776e5905"
+    },
+    "timescale.svg": {
+      "kind": "brand",
+      "source": "https://www.timescale.com",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/timescale.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "f31eb0630d79c70a6f8cd1756c297ff9f4998e06e065be11d6d8719537839b09"
+    },
+    "trino.svg": {
+      "kind": "brand",
+      "source": "https://github.com/trinodb/docs.trino.io/blob/653a46f6bdc64b5f67302dc9ab8a0c432ca25e70/352/_static/trino.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/trino.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "10a1bf3b226b2c746dcb640c59f135fbbb7827375492e26f0dd41b5bbced9a6c"
+    },
+    "victoriametrics.svg": {
+      "kind": "brand",
+      "source": "https://github.com/VictoriaMetrics/VictoriaMetrics/blob/24d61bf19374b42ef9839c13c7d35ce8888170e0/docs/assets/images/vm_logo.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/victoriametrics.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": "https://docs.victoriametrics.com/#victoriametrics-logo",
+      "sha256": "f6abf6120de83c9e3c7d56b47303a4951fe3a0fe30764ea5929dcab11d606bed"
+    },
+    "weaviate.svg": {
+      "kind": "brand",
+      "source": "https://weaviate.io/img/site/2026/weaviate-logo-2-colours-dark-green.svg",
+      "license": "Upstream brand mark; no separate logo license stated; copyright and trademark retained by project owner",
+      "modification": "None; original published artwork",
+      "source_sha256": "6018672acf7dd58a10da38028316a0a4e3ba4d3e2b92471a6f9ec8dece17d92b",
+      "sha256": "6018672acf7dd58a10da38028316a0a4e3ba4d3e2b92471a6f9ec8dece17d92b"
+    },
+    "zigbee2mqtt.svg": {
+      "kind": "brand",
+      "source": "https://github.com/Koenkk/zigbee2mqtt/blob/434981b567122c745c6a5228cd89b74694b15e4c/images/logo_vector.svg",
+      "package": "simple-icons@16.0.0",
+      "package_path": "icons/zigbee2mqtt.svg",
+      "license": "CC0-1.0",
+      "brand_license": null,
+      "guidelines": null,
+      "sha256": "5457523eb918bb96ca301a15ec08730fb93e00791bb0cc029f7f6eae0fcd27d3"
+    }
+  }
+}

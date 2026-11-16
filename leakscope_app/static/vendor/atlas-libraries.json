@@ -1,0 +1,11 @@
+{
+  "packages": {
+    "maplibre-gl": "6.17.0",
+    "@photo-sphere-viewer/core": "5.15.1",
+    "three": "0.185.1",
+    "esbuild": "0.28.2"
+  },
+  "lock_sha256": "f3ed80a4f7dadccd4743b9e80aff85128d83e18f15bd76e50e06a8952b0a5476",
+  "self_hosted": true,
+  "runtime_external_assets": false
+}

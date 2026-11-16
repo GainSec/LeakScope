@@ -1,0 +1,34 @@
+/* Native disclosures keep large saved-data tables out of the overview. */
+.ls-results-section{min-width:0;max-width:100%;margin:20px 0;border:1px solid #345263;border-radius:13px;background:linear-gradient(135deg,#122b36,#101c2b 70%);overflow:hidden}
+.ls-results-section>summary{display:flex;align-items:center;gap:12px;padding:17px 18px;cursor:pointer;list-style:none;color:#edf6ff;min-width:0}
+.ls-results-section>summary::-webkit-details-marker{display:none}
+.ls-results-section>summary::before{content:'›';font-size:24px;line-height:1;color:#9ce6d8;transition:transform .15s;flex:none}
+.ls-results-section[open]>summary::before{transform:rotate(90deg)}
+.ls-results-section>summary>strong{min-width:0;overflow-wrap:anywhere;font-size:14px;line-height:1.5}
+.ls-results-section>summary:focus-visible{outline:2px solid #9ce6d8;outline-offset:-4px}
+.ls-results-count{margin-left:auto;flex-shrink:0;color:#b1d9d6;font-size:11px;font-variant-numeric:tabular-nums;padding:4px 8px;border-radius:20px;background:#0d202b;border:1px solid #31515e}
+.ls-results-section[open]>summary{border-bottom:1px solid #304b60}
+.ls-results-section>.table-scroll{max-height:65vh}
+.ls-table-browser{min-width:0;max-width:100%}
+.ls-table-tools{display:flex;flex-wrap:wrap;align-items:end;gap:12px;padding:16px}
+.ls-table-tools>.field{flex:1 1 140px;min-width:0;margin:0}
+.ls-table-tools>.field:first-child{flex:2 1 210px}
+.ls-table-tools .input,.ls-table-tools .select{width:100%;min-width:0;max-width:100%}
+.ls-table-tools .field-label{font-size:11px;color:#cfdfeb}
+.ls-table-tools>.btn{margin-bottom:1px;min-height:36px}
+.ls-table-scope{margin:0;padding:0 16px 13px;color:#adc3d3;font-size:11px;line-height:1.65}
+.ls-table-viewport{max-height:60vh;overscroll-behavior:contain;scrollbar-color:#406a77 #10202c}
+.ls-table-viewport thead th{position:sticky;top:0;z-index:1}
+.ls-table-footer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:13px 16px;border-top:1px solid #304b60}
+.ls-table-status{flex:1 1 220px;min-width:0;font-size:11px;color:#c5d8e5;font-variant-numeric:tabular-nums}
+.ls-table-empty{padding:24px!important;color:#c3d2df;text-align:center}
+@media(max-width:640px){.ls-results-section>summary{flex-wrap:wrap;padding:13px;gap:8px}.ls-results-section>summary>strong{flex:1}.ls-results-count{margin-left:28px}.ls-table-tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:13px;gap:11px}.ls-table-tools>.field:first-child{grid-column:1/-1}.ls-table-tools>.btn{width:100%}.ls-table-footer{padding:12px}.ls-table-scope{padding-inline:13px}.ls-table-viewport{max-height:65vh}}
+@media(prefers-reduced-motion:reduce){.ls-results-section>summary::before{transition:none}}
+
+/* Export CSV / TXT above every results table */
+.ls-export{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin:6px 0 4px;padding:0 10px}
+.ls-export[hidden]{display:none}
+.ls-export-button{font-size:.8rem;padding:4px 11px}
+.ls-export-button::before{content:"\2193";margin-right:6px;opacity:.8}
+.ls-export-label{align-self:center;font-size:.8rem;color:var(--muted,#8fa1b3);margin-right:2px}
+.inspector-export{padding:10px 24px 0;margin:0}

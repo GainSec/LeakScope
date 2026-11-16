@@ -1,0 +1,57 @@
+ARG LEAKSCOPE_APP_IMAGE=leakscope:phase3base
+FROM node:22-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d AS browser-node
+WORKDIR /opt/leakscope-browser
+COPY browser_runtime/package.json browser_runtime/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+
+FROM ${LEAKSCOPE_APP_IMAGE}
+
+USER 0
+RUN python - <<'PY'
+from pathlib import Path
+Path('/etc/apt/sources.list.d/debian.sources').write_text('''Types: deb
+URIs: https://snapshot.debian.org/archive/debian/20261107T000000Z
+Suites: trixie trixie-updates
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+Check-Valid-Until: no
+
+Types: deb
+URIs: https://snapshot.debian.org/archive/debian-security/20261107T000000Z
+Suites: trixie-security
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+Check-Valid-Until: no
+''')
+PY
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       curl=8.14.1-2+deb13u7 \
+       chromium=156.0.8078.79-1~deb13u1 \
+       fonts-liberation=1:2.1.5-3 \
+       xvfb=2:21.1.16-1.3+deb13u4 \
+    && rm -rf /var/lib/apt/lists/*
+COPY deploy/capture_tools.py /tmp/leakscope-capture-tools.py
+RUN python /tmp/leakscope-capture-tools.py && rm /tmp/leakscope-capture-tools.py
+RUN python - <<'PY'
+import json,subprocess
+from pathlib import Path
+wrapper=Path('/usr/local/bin/leakscope-chromium')
+wrapper.write_text('#!/bin/sh\nexec /usr/bin/chromium "--proxy-bypass-list=<-loopback>" "$@"\n')
+wrapper.chmod(0o755)
+versions={'httpx':'1.12.0','gowitness':'3.2.2','debian_snapshot':'20261107T000000Z'}
+for name in ('curl','chromium'):
+ versions[name]=subprocess.check_output(['dpkg-query','-W','-f=${Version}',name],text=True)
+Path('/app/capture-tool-versions.json').write_text(json.dumps(versions,sort_keys=True)+'\n')
+PY
+COPY --from=browser-node /usr/local/bin/node /usr/local/bin/node
+COPY --from=browser-node /opt/leakscope-browser /opt/leakscope-browser
+COPY browser_runtime/*.mjs /opt/leakscope-browser/
+COPY deploy/browser-capture-entrypoint.sh /usr/local/bin/leakscope-browser-entrypoint
+RUN chmod 755 /usr/local/bin/leakscope-browser-entrypoint
+ENV NODE_OPTIONS="--max-old-space-size=256"
+COPY leakscope/phase3 /app/leakscope/phase3
+ENV LEAKSCOPE_CAPTURE_DIR=/data/artifacts/captures
+RUN mkdir -p /data/artifacts/captures && chown 501:20 /data/artifacts/captures
+USER 501:20
+CMD ["celery", "-A", "leakscope", "worker", "--loglevel=info", "--concurrency=1", "--pool=solo", "--queues=fetch", "--hostname=fetch@%h"]

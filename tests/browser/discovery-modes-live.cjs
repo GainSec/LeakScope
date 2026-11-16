@@ -1,0 +1,13 @@
+const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/strict');
+const base=process.env.LEAKSCOPE_BASE_URL||'http://127.0.0.1:2630';
+(async()=>{const b=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'}),p=await b.newPage(),errors=[],submitted=[];p.on('pageerror',e=>errors.push(e.message));fs.mkdirSync('.runtime/mode-ui',{recursive:true});
+ await p.route('**/api/discover',async route=>{const body=route.request().postDataJSON();submitted.push(body);await route.fulfill({status:202,contentType:'application/json',body:JSON.stringify({runs:[],results_url:'/assets/',collection_mode:body.collection_mode})});});
+ try{for(const width of [1440,390]){await p.setViewportSize({width,height:1000});
+  for(const mode of ['passive','semi_passive','screenshot','full']){await p.goto(base+'/discover/?service_type=elastic');await p.waitForSelector('#page-root[aria-busy=false]');assert.equal(await p.locator('[name=collection_mode]:checked').inputValue(),'passive');assert.equal(await p.locator('[name=collection_mode]').count(),4);assert.equal(await p.locator('[name=collection_mode]').first().evaluate(n=>!!n.closest('form').querySelector('[name=active_probe]')),false);
+   await p.locator('[name=query_mode]').selectOption('nonstandard');await p.locator('[name=collection_mode][value='+mode+']').check();await p.waitForFunction(()=>document.querySelector('.code-box').textContent.includes('-port:9200'));assert.equal(await p.locator('[name=query_mode]').inputValue(),'nonstandard');assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+   await p.locator('[name=collection_mode]').first().evaluate(n=>n.closest('section').scrollIntoView());await p.screenshot({path:'.runtime/mode-ui/'+mode+'-'+width+'.png'});
+   const prior=submitted.length;await p.getByRole('button',{name:'Run discovery →',exact:true}).click();await p.waitForFunction(()=>document.querySelector('dialog')?.open||document.querySelector('[role=dialog]'));assert.equal(submitted.length,prior+1);const body=submitted.at(-1);assert.equal(body.collection_mode,mode);assert.equal(body.query_mode,'nonstandard');assert.equal(body.page,1);assert.equal('active_probe' in body,false);
+  }
+ }
+ assert.deepEqual(errors,[]);fs.writeFileSync('.runtime/mode-browser.json',JSON.stringify({base,viewports:[1440,390],modes:['passive','semi_passive','screenshot','full'],passive_default:true,independent_query_strategy:true,submissions_intercepted:submitted.length,provider_searches:0,browser_errors:errors},null,2));console.log('Four collection modes pass desktop/mobile with zero provider submissions');
+ }finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});

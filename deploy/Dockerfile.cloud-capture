@@ -1,0 +1,12 @@
+# Reuse the already verified, pinned capture toolchain when only app code changes.
+# A clean toolchain build remains available through Dockerfile.capture.
+ARG LEAKSCOPE_CAPTURE_BASE=leakscope:3.6-capture-20261108
+FROM ${LEAKSCOPE_CAPTURE_BASE}
+USER 0
+COPY leakscope /app/leakscope
+COPY leakscope_app /app/leakscope_app
+COPY tests /app/tests
+RUN LEAKSCOPE_SECRET_KEY=static-build-only LEAKSCOPE_CONFIG_FILE=/nonexistent \
+    LEAKSCOPE_DATA_DIR=/tmp/leakscope-cloud-static python manage.py collectstatic --noinput \
+    && rm -rf /tmp/leakscope-cloud-static
+USER 501:20

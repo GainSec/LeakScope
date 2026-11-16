@@ -1,0 +1,82 @@
+/* Shared list toolbar (list_toolbar.js): one row of controls, chips, optional insights, selection bar, footer. */
+.ls-listbar{display:grid;gap:10px;margin:0 0 12px}
+.ls-listbar-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ls-listbar-gap{flex:1 1 0;min-width:0}
+#page-root .ls-listbar .ls-views{display:contents}
+.ls-listbar .ls-search{flex:1 1 240px;max-width:380px;margin:0}
+.ls-listbar .ls-search input{width:100%}
+.ls-listbar .input,.ls-listbar .select{min-height:32px;padding:4px 10px;font-size:13px}
+.ls-listbar-row>.ls-field{display:flex;align-items:center;margin:0}
+.ls-listbar-row>.ls-field>.ls-field-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.ls-listbar-row>.ls-field{flex:0 0 auto}
+#page-root .ls-listbar-row>.ls-field .select{width:auto!important;min-width:0;max-width:200px!important}
+.ls-listbar .ls-popover>summary{min-height:32px;padding:4px 11px;font-size:13px;font-weight:500;line-height:1.3;margin:0}
+.ls-listbar .ls-columns{margin:0;padding:0;border:0;background:none}
+.ls-listbar .btn-small,.ls-selection .btn-small{min-height:32px}
+.ls-insights-toggle[aria-pressed=true],.ls-filters-toggle[aria-expanded=true]{border-color:var(--scope-signal);color:var(--scope-ink)}
+
+.ls-filters-panel{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px 14px;padding:12px 14px;border:1px solid var(--scope-line);border-radius:10px;background:#0c1522}
+.ls-filters-panel .ls-field{display:grid;gap:4px;margin:0;font-size:12px;color:var(--scope-dim)}
+.ls-filters-panel .ls-field:has(input[type=checkbox]){display:flex;flex-direction:row-reverse;justify-content:flex-end;align-items:center;gap:8px}
+
+.ls-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.ls-chip{display:inline-flex;align-items:center;gap:6px;min-height:26px;padding:2px 10px;border:1px solid var(--scope-line-strong);border-radius:999px;background:#83e5d50f;color:var(--scope-ink);font-size:12.5px;cursor:pointer}
+.ls-chip:after{content:'×';opacity:.65;font-size:14px;line-height:1}
+.ls-chip:hover{border-color:var(--scope-signal)}
+.ls-chip-clear,.ls-about-toggle{border:0;background:none;padding:2px 4px;color:var(--scope-dim);font-size:12.5px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.ls-chip-clear:hover,.ls-about-toggle:hover{color:var(--scope-ink)}
+
+.ls-selection{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px;border:1px solid #83e5d540;border-radius:10px;background:#83e5d512}
+.ls-selection-count{margin-right:6px;font-weight:600;font-variant-numeric:tabular-nums}
+
+.ls-listfoot{margin:10px 0 0;font-size:12.5px;color:var(--scope-dim)}
+.ls-listfoot-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px}
+.ls-count{font-variant-numeric:tabular-nums}
+.ls-pager{margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ls-about{margin-top:8px;max-width:80ch}
+
+/* Popover bodies for <details class="ls-popover"> (summary styling lives in scope.css). */
+.ls-popover-body{position:absolute;left:0;top:calc(100% + 6px);z-index:60;display:grid;gap:10px;min-width:260px;max-width:min(420px,90vw);max-height:70vh;overflow:auto;padding:12px;background:#0e1826;border:1px solid var(--scope-line-strong);border-radius:10px;box-shadow:0 18px 50px #000a}
+.ls-columns>.ls-popover-body,.ls-rowmenu>.ls-popover-body{left:auto;right:0}
+.ls-viewmenu>summary{max-width:280px}
+.ls-viewmenu-label{overflow:hidden;text-overflow:ellipsis}
+.ls-viewlist{display:grid;gap:2px;padding-bottom:10px;border-bottom:1px solid var(--scope-line)}
+.ls-viewitem,.ls-rowmenu .ls-menuitem{display:block;width:100%;min-height:32px;padding:5px 9px;border:0;border-radius:7px;background:none;color:var(--scope-ink);font-size:13px;text-align:left;text-decoration:none;cursor:pointer}
+.ls-viewitem:hover,.ls-rowmenu .ls-menuitem:hover{background:#ffffff0a}
+.ls-viewitem[aria-current=true]{box-shadow:inset 2px 0 var(--scope-signal);background:#83e5d514}
+.ls-viewmenu-manage{display:flex;flex-wrap:wrap;gap:6px}
+.ls-viewmenu-manage .input{flex:1 1 100%}
+
+.ls-rowmenu{display:inline-block;vertical-align:middle}
+.ls-rowmenu>summary{min-height:28px;padding:2px 9px;font-size:16px;line-height:1}
+.ls-rowmenu>summary:after{content:none}
+.ls-rowmenu>.ls-popover-body{min-width:210px;gap:2px;padding:6px}
+.ls-rowmenu hr{width:100%;margin:4px 0;border:0;border-top:1px solid var(--scope-line)}
+.ls-rowmenu .ls-menuitem.is-danger{color:#ff9c9c}
+.ls-rowactions{display:flex;align-items:center;justify-content:flex-end;gap:6px;white-space:nowrap}
+
+/* Tables that fit the page (LeakScopeTables.fit): no sideways scrolling. Cells wrap; when the table's own
+   space is too narrow for its columns it gets .is-stacked and each row becomes a block of "Column: value" lines. */
+#page-root table.ls-fit{width:100%;min-width:0!important;table-layout:auto}
+#page-root table.ls-fit td{white-space:normal;overflow-wrap:break-word;min-width:0}
+#page-root table.ls-fit td :is(.mono,code,a,.cell-sub){overflow-wrap:anywhere}
+#page-root table.ls-fit td:is([data-label="Tags"],[data-label="Names"],[data-label="Endpoint"],[data-label="Subject"],[data-label="Target"],[data-label="Query"]){overflow-wrap:anywhere}
+#page-root table.ls-fit th{white-space:nowrap}
+#page-root table.ls-fit td:is([data-label="Select"],[data-label=""]):first-child,#page-root table.ls-fit:has(tbody td:first-child:is([data-label="Select"],[data-label=""])) th:first-child{width:44px}
+#page-root table.ls-fit td:is([data-label="Actions"],[data-label="Observations"],[data-label="Last seen"],[data-label="First seen"]){white-space:nowrap;width:1%}
+#page-root table.ls-fit.is-tight :is(th,td,td *){white-space:normal!important;overflow-wrap:anywhere!important;min-width:0!important}
+#page-root table.ls-fit.is-tight td{width:auto!important}
+#page-root table.ls-fit.is-stacked,#page-root table.ls-fit.is-stacked :is(thead,tbody){display:block}
+#page-root table.ls-fit.is-stacked thead tr{display:flex;flex-wrap:wrap;gap:4px 6px;padding:6px 0;border:0}
+#page-root table.ls-fit.is-stacked th{display:block;width:auto;padding:4px 8px;border:1px solid var(--scope-line);border-radius:999px;background:none}
+#page-root table.ls-fit.is-stacked th:not(:has([data-sort-key])){display:none}
+#page-root table.ls-fit.is-stacked tbody tr{display:block;padding:10px 4px;border-bottom:1px solid var(--scope-line)}
+#page-root table.ls-fit.is-stacked td{display:block;position:relative;width:auto!important;max-width:none;min-height:24px;padding:2px 0 2px 118px;border:0;white-space:normal;overflow-wrap:anywhere}
+#page-root table.ls-fit.is-stacked td[hidden]{display:none}
+#page-root table.ls-fit.is-stacked td:is([data-label=""],[data-label="Select"],[data-label="Actions"],:not([data-label])){padding-left:0}
+#page-root table.ls-fit.is-stacked td[data-label]:not([data-label=""],[data-label="Select"],[data-label="Actions"]):before{content:attr(data-label);position:absolute;left:0;top:2px;width:108px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--scope-faint);font-size:12px;line-height:1.7}
+#page-root table.ls-fit.is-stacked td[data-label="Actions"]{margin-top:6px}
+#page-root table.ls-fit.is-stacked .ls-rowactions{justify-content:flex-start}
+/* Long preformatted evidence wraps instead of scrolling sideways. */
+#page-root :is(pre,.code-box){white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:560px){.ls-listbar .ls-search{flex-basis:100%;max-width:none}}

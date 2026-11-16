@@ -1,0 +1,80 @@
+{
+  "method": "Marker facts transcribed from primary source documents and maintained matchers; not captured provider results or a live protocol validation fixture.",
+  "evidence": [
+    {
+      "profile": "monetdb",
+      "kind": "native-response",
+      "markers": [
+        ":mserver:9:",
+        ":merovingian:9:"
+      ],
+      "source": "https://github.com/MonetDB/MonetDB-PHP/blob/master/protocol_doc/README.md",
+      "boundary": "MAPI challenge text only, not full framing."
+    },
+    {
+      "profile": "maxdb",
+      "kind": "native-response",
+      "markers": [
+        "Rejected bad connect packet"
+      ],
+      "source": "https://github.com/nmap/nmap/blob/master/nmap-service-probes",
+      "boundary": "Probe-elicited rejection, not login success."
+    },
+    {
+      "profile": "informix",
+      "kind": "native-response",
+      "markers": [
+        "lsrvinfx",
+        "asfecho"
+      ],
+      "source": "https://github.com/nmap/nmap/blob/master/nmap-service-probes",
+      "boundary": "Printable fragments in a binary SQLI response."
+    },
+    {
+      "profile": "aerospike",
+      "kind": "http-companion",
+      "markers": [
+        "aerospike_node_up"
+      ],
+      "source": "https://raw.githubusercontent.com/aerospike/aerospike-prometheus-exporter/master/README.md",
+      "boundary": "Exporter can emit metric while database unavailable."
+    },
+    {
+      "profile": "milvus",
+      "kind": "http-companion",
+      "markers": [
+        "Milvus Management"
+      ],
+      "source": "https://raw.githubusercontent.com/milvus-io/milvus/master/internal/http/webui/index.html",
+      "boundary": "HTML title at /webui/, not native gRPC identity."
+    },
+    {
+      "profile": "hana",
+      "kind": "http-companion",
+      "markers": [
+        "x-sap-login-page"
+      ],
+      "source": "https://help.sap.com/doc/f32a797a5ec94d8ba4d7ed240d95bfae/2.0.04/en-US/tutorial-HANA.html",
+      "boundary": "Response header used by XS API; no SQL identity."
+    },
+    {
+      "profile": "ads",
+      "kind": "http-companion",
+      "markers": [
+        "WEB SERVER V",
+        "title: BC"
+      ],
+      "source": "https://github.com/nmap/nmap/blob/master/nmap-service-probes",
+      "boundary": "Legacy BC bus-controller web interface; custom HTTP title header, not HTML title or ADS."
+    },
+    {
+      "profile": "smux",
+      "kind": "unsupported-binary-index",
+      "markers_hex": [
+        "410102"
+      ],
+      "source": "https://www.rfc-editor.org/rfc/rfc1227.html",
+      "boundary": "Short BER ClosePDU is not a verified Shodan searchable text signature."
+    }
+  ]
+}

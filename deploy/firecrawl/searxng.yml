@@ -1,0 +1,32 @@
+use_default_settings:
+  engines:
+    keep_only:
+      - duckduckgo
+      - brave
+      - yahoo
+general:
+  debug: false
+  instance_name: LeakScope research
+search:
+  safe_search: 0
+  autocomplete: ""
+  formats:
+    - html
+    - json
+server:
+  secret_key: "set-through-SEARXNG_SECRET"
+  bind_address: 0.0.0.0
+  port: 8080
+  limiter: false
+  public_instance: false
+  image_proxy: false
+outgoing:
+  request_timeout: 8.0
+  max_request_timeout: 12.0
+engines:
+  - name: duckduckgo
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: yahoo
+    disabled: false

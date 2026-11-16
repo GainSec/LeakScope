@@ -1,57 +1,410 @@
-version: "3.9"
+name: leakscope
+
+x-app: &app
+  image: ${LEAKSCOPE_IMAGE:-leakscope:modern}
+  build: .
+  user: "${LEAKSCOPE_UID:-501}:${LEAKSCOPE_GID:-20}"
+  restart: unless-stopped
+  environment: &environment
+    DJANGO_DEBUG: "0"
+    DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1],host.docker.internal}"
+    CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-http://localhost:2627,http://127.0.0.1:2627}"
+    LEAKSCOPE_DATA_DIR: /data/app
+    LEAKSCOPE_EXPORT_DIR: /data/artifacts/exports
+    LEAKSCOPE_CONFIG_FILE: /run/secrets/provider_config
+    FIRECRAWL_API_URL: ${FIRECRAWL_API_URL:-http://firecrawl:3002/v2}
+    LEAKSCOPE_GALLERY_AUTO_THUMBNAILS: "${LEAKSCOPE_GALLERY_AUTO_THUMBNAILS:-1}"
+    LEAKSCOPE_PANORAMAX_API_URL: "${LEAKSCOPE_PANORAMAX_API_URL:-http://panoramax:5000/api}"
+    LEAKSCOPE_CAPTURE_RETENTION_DAYS: ${LEAKSCOPE_CAPTURE_RETENTION_DAYS:-30}
+    BROWSER_CONTROL_URL: http://fetch:9227
+    BROWSER_CONTROL_TOKEN_FILE: /run/secrets/browser_control_token
+    LEAKSCOPE_LEGACY_MONITORING: ${LEAKSCOPE_LEGACY_MONITORING:-0}
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/0
+  secrets:
+    - provider_config
+    - browser_control_token
+  volumes:
+    - type: bind
+      source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/app
+      target: /data/app
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/artifacts
+      target: /data/artifacts
+      bind:
+        create_host_path: false
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+  init: true
 
 services:
-  redis:
-    image: redis:7-alpine
+  certstream:
+    image: ${LEAKSCOPE_CERTSTREAM_IMAGE:-leakscope/certstream:1.10.1-tail}
+    build:
+      context: ./deploy/certstream
+    user: "${LEAKSCOPE_UID:-501}:${LEAKSCOPE_GID:-20}"
     restart: unless-stopped
+    init: true
+    cpus: 2.0
+    mem_limit: 768m
+    volumes:
+      - type: bind
+        source: ./deploy/certstream/config.yaml
+        target: /app/config/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/certstream
+        target: /data/certstream
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/metrics]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  certstream-ingestor:
+    <<: *app
+    command: [python, manage.py, consume_certstream]
+    cpus: 1.0
+    mem_limit: 384m
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import os;os.environ.setdefault('DJANGO_SETTINGS_MODULE','leakscope.settings');import django;django.setup();from django.utils import timezone;from leakscope_app.models import StreamHealth;h=StreamHealth.objects.filter(pk=1).first();raise SystemExit(0 if h and h.heartbeat_at and (timezone.now()-h.heartbeat_at).total_seconds()<90 else 1)"]
+      interval: 30s
+      timeout: 8s
+      start_period: 30s
+      retries: 3
+
+  redis:
+    image: redis:8-alpine@sha256:71885d8cc6e42f2bc0aa2eb853bfc4be200b5108a46ac50e117ae1df0531fb80
+    command: [redis-server, --appendonly, "yes", --save, "60", "1000"]
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/redis
+        target: /data
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  migrate:
+    <<: *app
+    restart: "no"
+    command: [python, manage.py, migrate, --noinput]
+    depends_on:
+      redis:
+        condition: service_healthy
 
   web:
-    build: .
-    command: python manage.py runserver 0.0.0.0:8000
+    <<: *app
     ports:
-      - "8000:8000"
-    volumes:
-      - .:/app
-    environment:
-      - SHODAN_API_KEY=${SHODAN_API_KEY}
-      - ZOOMEYE_API_KEY=${ZOOMEYE_API_KEY:-}
-      - GMAIL_EMAIL=${GMAIL_EMAIL:-}
-      - GMAIL_PASSWORD=${GMAIL_PASSWORD:-}
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - BLACKLIST=${BLACKLIST:-}
-      - RUN_MIGRATIONS=1
+      - "${LEAKSCOPE_BIND:-0.0.0.0}:${LEAKSCOPE_PORT:-2627}:8000"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 6
 
   worker:
-    build: .
-    command: celery -A leakscope worker --loglevel=info --concurrency=1 --pool=solo
-    volumes:
-      - .:/app
-    environment:
-      - SHODAN_API_KEY=${SHODAN_API_KEY}
-      - ZOOMEYE_API_KEY=${ZOOMEYE_API_KEY:-}
-      - GMAIL_EMAIL=${GMAIL_EMAIL:-}
-      - GMAIL_PASSWORD=${GMAIL_PASSWORD:-}
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - BLACKLIST=${BLACKLIST:-}
-      - RUN_MIGRATIONS=0
+    <<: *app
+    command: [celery, -A, leakscope, worker, "--queues=celery,discovery", --loglevel=info, --concurrency=1, --pool=solo, --hostname=leakscope@%h]
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, celery, -A, leakscope, inspect, ping, --timeout=3]
+      interval: 30s
+      timeout: 8s
+      start_period: 15s
+      retries: 3
+
+  fetch:
+    <<: *app
+    image: ${LEAKSCOPE_CAPTURE_IMAGE:-leakscope:phase3capture}
+    build:
+      context: .
+      dockerfile: Dockerfile.capture
+      additional_contexts:
+        leakscope_app: service:web
+      args:
+        LEAKSCOPE_APP_IMAGE: leakscope_app
+    entrypoint: [/usr/local/bin/leakscope-browser-entrypoint]
+    command: [celery, -A, leakscope, worker, --queues=fetch, --loglevel=info, --concurrency=1, --pool=solo, --hostname=fetch@%h]
+    environment:
+      <<: *environment
+      LEAKSCOPE_WORKER_KIND: fetch
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import socket;from leakscope.celery import app;r=app.control.inspect(destination=['fetch@'+socket.gethostname()],timeout=3).ping();raise SystemExit(0 if r else 1)"]
+      interval: 30s
+      timeout: 8s
+      start_period: 15s
+      retries: 3
 
   beat:
-    build: .
-    command: celery -A leakscope beat --loglevel=info
-    volumes:
-      - .:/app
-    environment:
-      - SHODAN_API_KEY=${SHODAN_API_KEY}
-      - ZOOMEYE_API_KEY=${ZOOMEYE_API_KEY:-}
-      - GMAIL_EMAIL=${GMAIL_EMAIL:-}
-      - GMAIL_PASSWORD=${GMAIL_PASSWORD:-}
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - BLACKLIST=${BLACKLIST:-}
-      - RUN_MIGRATIONS=0
+    <<: *app
+    profiles: [scheduler]
+    command: [celery, -A, leakscope, beat, --loglevel=info, --schedule=/data/beat/celerybeat-schedule, --pidfile=/data/beat/celerybeat.pid]
     depends_on:
-      - redis
-      
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - type: bind
+        source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/app
+        target: /data/app
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/artifacts
+        target: /data/artifacts
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/beat
+        target: /data/beat
+        bind:
+          create_host_path: false
+
+  firecrawl:
+    image: ghcr.io/firecrawl/firecrawl:2.11.162@sha256:1b223ef18d410f67615f32ccaa3dcedfc26af4286f096247bddca3b624545e63
+    user: "1000:1000"
+    command: [node, dist/src/harness.js, --start-docker]
+    restart: unless-stopped
+    init: true
+    cpus: 2.0
+    mem_limit: 3g
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3002"
+      ENV: local
+      USE_DB_AUTHENTICATION: "false"
+      NUQ_BACKEND: pg
+      NUQ_WORKER_COUNT: "1"
+      HARNESS_STARTUP_TIMEOUT_MS: "120000"
+      POSTGRES_HOST: firecrawl-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: postgres
+      POSTGRES_USER: firecrawl
+      POSTGRES_PASSWORD: ${LEAKSCOPE_FIRECRAWL_PASSWORD:?Set a private Firecrawl backend password}
+      NUQ_RABBITMQ_URL: amqp://firecrawl:${LEAKSCOPE_FIRECRAWL_PASSWORD:?Set a private Firecrawl backend password}@firecrawl-rabbitmq:5672
+      REDIS_URL: redis://firecrawl-redis:6379/0
+      REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379/1
+      PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-browser:3000/scrape
+      SEARXNG_ENDPOINT: http://searxng:8080
+      LOGGING_LEVEL: warn
+      NODE_OPTIONS: --max-old-space-size=384
+    networks:
+      default: {}
+      research-backend: {}
+      research-egress:
+        gw_priority: 1
+    depends_on:
+      firecrawl-postgres:
+        condition: service_healthy
+      firecrawl-redis:
+        condition: service_healthy
+      firecrawl-rabbitmq:
+        condition: service_healthy
+      firecrawl-browser:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3002/').then(async r=>{if(!r.ok||(await r.json()).message!=='Firecrawl API')process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 8s
+      start_period: 120s
+      retries: 3
+    logging: &research-logging
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  firecrawl-browser:
+    image: ghcr.io/firecrawl/playwright-service@sha256:eacaf2c256a6ff7fd1869e470d2969e97a037ff6c75ac01d38784d138a33f8eb
+    restart: unless-stopped
+    init: true
+    cpus: 1.5
+    mem_limit: 1536m
+    environment:
+      PORT: "3000"
+      MAX_CONCURRENT_PAGES: "2"
+      BLOCK_MEDIA: "true"
+      ALLOW_LOCAL_WEBHOOKS: "false"
+    networks:
+      research-backend: {}
+      research-egress:
+        gw_priority: 1
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 60s
+      timeout: 15s
+      start_period: 30s
+      retries: 3
+    logging: *research-logging
+
+  firecrawl-postgres:
+    image: ghcr.io/firecrawl/nuq-postgres@sha256:d719b36160eac2fcbe16dc7e7360ddb9c82c40ea5da183d07bf4a755c6a0b2ae
+    user: "${LEAKSCOPE_UID:-501}:${LEAKSCOPE_GID:-20}"
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 768m
+    environment:
+      POSTGRES_USER: firecrawl
+      POSTGRES_PASSWORD: ${LEAKSCOPE_FIRECRAWL_PASSWORD:?Set a private Firecrawl backend password}
+      POSTGRES_DB: postgres
+    command: [postgres, -c, max_wal_size=1GB, -c, min_wal_size=80MB, -c, shared_buffers=128MB]
+    networks: [research-backend]
+    volumes:
+      - type: bind
+        source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/firecrawl/postgres
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD-SHELL, 'psql -U firecrawl -d postgres -tAc "SELECT to_regclass(''nuq.queue_scrape'') IS NOT NULL AND to_regclass(''nuq.queue_crawl_finished'') IS NOT NULL" | grep -qx t']
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 30
+    logging: *research-logging
+
+  firecrawl-redis:
+    image: redis:8-alpine@sha256:71885d8cc6e42f2bc0aa2eb853bfc4be200b5108a46ac50e117ae1df0531fb80
+    command: [redis-server, --appendonly, "yes", --maxmemory, 192mb, --maxmemory-policy, noeviction]
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    networks: [research-backend]
+    volumes:
+      - type: bind
+        source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/firecrawl/redis
+        target: /data
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    logging: *research-logging
+
+  firecrawl-rabbitmq:
+    image: rabbitmq:4.2-alpine@sha256:dea0f5843025e0c3c1a128b14fc2e181ea59ff369e7048e6a7fbac83bd8c4f9d
+    hostname: firecrawl-rabbitmq
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 512m
+    environment:
+      RABBITMQ_DEFAULT_USER: firecrawl
+      RABBITMQ_DEFAULT_PASS: ${LEAKSCOPE_FIRECRAWL_PASSWORD:?Set a private Firecrawl backend password}
+      RABBITMQ_NODENAME: rabbit@firecrawl-rabbitmq
+    networks: [research-backend]
+    volumes:
+      - type: bind
+        source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/firecrawl/rabbitmq
+        target: /var/lib/rabbitmq
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, check_running]
+      interval: 10s
+      timeout: 8s
+      start_period: 30s
+      retries: 12
+    logging: *research-logging
+
+  searxng:
+    image: docker.io/searxng/searxng@sha256:c750ee1d859b26d3aeae51c07f6a48c3a0bfbaa9195d71a18b258862d88c4c3c
+    user: "${LEAKSCOPE_UID:-501}:${LEAKSCOPE_GID:-20}"
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cpus: 1.0
+    mem_limit: 512m
+    environment:
+      SEARXNG_SECRET: ${LEAKSCOPE_SEARXNG_SECRET:?Set a private SearXNG site secret}
+      SEARXNG_SETTINGS_PATH: /etc/searxng/settings.yml
+    networks:
+      research-backend: {}
+      research-egress:
+        gw_priority: 1
+    volumes:
+      - type: bind
+        source: ${LEAKSCOPE_SEARXNG_CONFIG:-./deploy/firecrawl/searxng.yml}
+        target: /etc/searxng/settings.yml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/firecrawl/searxng
+        target: /var/cache/searxng
+        bind:
+          create_host_path: false
+    tmpfs: ["/tmp:size=128m,noexec,nosuid"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/healthz]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging: *research-logging
+
+networks:
+  default: {}
+  research-backend:
+    internal: true
+  research-egress: {}
+
+secrets:
+  provider_config:
+    file: ${LEAKSCOPE_CONFIG_SOURCE:-./config.json}
+
+  browser_control_token:
+    file: ${LEAKSCOPE_BROWSER_TOKEN_SOURCE:-${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/app/browser-control-token}

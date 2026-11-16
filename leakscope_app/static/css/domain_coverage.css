@@ -1,0 +1,42 @@
+.domain-coverage { display:grid;gap:16px;min-width:0;color:#dce8f3; }
+.domain-coverage * { box-sizing:border-box; }
+.domain-coverage h1 { margin:0 0 10px;font-size:clamp(27px,3vw,36px);letter-spacing:-.035em; }
+.domain-coverage header p,.coverage-description { color:#bdcddd;font-size:13px;line-height:1.65;margin:0; }
+.coverage-toolbar,.coverage-inline-tools,.coverage-controls { display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px; }
+.coverage-toolbar { padding:15px;border:1px solid #344d62;border-radius:12px;background:#101e2d; }
+.coverage-field { display:grid;gap:7px;font-size:12px;flex:1 1 220px;max-width:340px; }
+.coverage-field .select,.coverage-inline-tools .input,.coverage-inline-tools .select { width:100%;min-width:0;background:#0c1826;color:#e1edf6;border-color:#3d566c; }
+.coverage-controls { justify-content:flex-end; }
+.coverage-controls .btn { font-size:12px; }
+.coverage-scope-banner { display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:16px;border-left:2px solid #94e5d4;background:linear-gradient(90deg,#142a32,#101b29);font-size:12px; }
+.coverage-scope-banner strong { font-size:14px; }
+.coverage-generated { margin-left:auto;color:#b6c7d7;font-size:11px; }
+.coverage-content { display:grid;gap:14px;min-width:0; }
+.coverage-message { padding:13px 15px;border:1px solid #385c6b;border-radius:9px;background:#152b35;color:#c8dedf;font-size:12px;line-height:1.6; }
+.coverage-message.is-error { color:#ffd0d0;border-color:#80515a;background:#33202c; }
+.coverage-panel { min-width:0;border:1px solid #344d62;border-radius:12px;background:linear-gradient(145deg,#122231,#111a29);overflow:hidden; }
+.coverage-panel > summary { cursor:pointer;padding:17px 20px;color:#dcecf5;font-size:14px;min-height:56px; }
+.coverage-panel[open] > summary { border-bottom:1px solid #344d62; }
+.coverage-panel > summary::marker { color:#95ded4;font-size:11px; }
+.coverage-small-count { float:right;font-size:11px;border:1px solid #3a5a65;border-radius:12px;padding:1px 8px;color:#b5dedb; }
+.coverage-panel-content { display:grid;gap:15px;padding:18px 20px;min-width:0; }
+.coverage-panel-content > * { min-width:0; }
+.domain-coverage details:not([open]) > :not(summary) { display:none!important; }
+.coverage-inline-tools > * { flex:1 1 180px; }
+.coverage-table-scroll { width:100%;max-width:100%;overflow:auto;border:1px solid #324c62;border-radius:9px; }
+.domain-coverage table { width:100%;border-collapse:collapse;font-size:12px; }
+.domain-coverage th,.domain-coverage td { padding:12px 10px;border-bottom:1px solid #2b4357;text-align:left;vertical-align:top; }
+.domain-coverage th { background:#17293b;color:#bdcedf;font-size:10px;letter-spacing:.07em;text-transform:uppercase;white-space:nowrap; }
+.domain-coverage tr:last-child td { border-bottom:0; }
+.coverage-domain-label { display:grid;gap:7px;min-width:180px;max-width:300px;overflow-wrap:anywhere; }
+.coverage-domain-label strong { color:#e2edf6; }
+.coverage-domain-label small { color:#b1c5d6;font-size:11px; }
+.coverage-domain-label a { width:fit-content;color:#9de4d9;font-size:11px; }
+.coverage-record-cell { display:block;min-width:32px;text-align:center;padding:5px;border-radius:5px;color:#8499ad;font-variant-numeric:tabular-nums; }
+.coverage-record-cell.has-records { color:#b3f1df;background:#1d3e43;border:1px solid #356568; }
+.coverage-freshness { display:grid;gap:5px;min-width:150px; }
+.coverage-freshness small { color:#afc0d1;font-size:11px; }
+.coverage-date { display:block;min-width:130px;color:#bccddd; }
+.coverage-visually-hidden { position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0); }
+.domain-coverage summary:focus-visible,.coverage-table-scroll:focus-visible { outline:2px solid #98ead9;outline-offset:-3px; }
+@media(max-width:600px) { .coverage-field {max-width:none;width:100%;}.coverage-scope-banner {align-items:flex-start;}.coverage-generated {width:100%;margin-left:0;}.coverage-panel-content {padding:15px;}.coverage-panel > summary {padding:15px;} }

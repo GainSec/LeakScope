@@ -1,0 +1,18 @@
+.activity-logs-toggle { white-space:nowrap; }
+.activity-logs-toggle[aria-pressed="true"] { color:var(--accent,#83e5d5);border-color:color-mix(in srgb,var(--accent,#83e5d5) 40%,transparent); }
+.run-log-viewer { margin:14px 0 0;border:1px solid var(--line,#2b3c52);border-radius:10px;background:color-mix(in srgb,var(--panel,#101c2b) 94%,#78d9cf 6%);overflow:hidden;min-width:0; }
+.run-log-viewer[hidden] { display:none!important; }
+.run-log-viewer > summary { cursor:pointer;padding:12px 14px;color:var(--ink,#e7eef8);font-weight:650; }
+.run-log-state { margin-left:14px;font-size:11px;color:var(--muted,#b0bfd1);font-weight:400;text-transform:capitalize; }
+.run-log-body { padding:0 14px 14px;min-width:0; }
+.run-log-toolbar { display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:4px 0 12px; }
+.run-log-toolbar .check-row { display:flex;align-items:center;gap:5px;margin:0 0 0 auto;font-size:12px; }
+.run-log-toolbar .select { width:auto;max-width:180px; }
+.run-log-lines { max-height:360px;overflow:auto;border:1px solid var(--line,#2b3c52);border-radius:8px;background:#080f19;padding:10px;scrollbar-gutter:stable; }
+.run-log-line { display:grid;grid-template-columns:90px 62px minmax(0,1fr);gap:6px 10px;padding:7px 0;border-bottom:1px solid #20324880;font-size:12px;line-height:1.6; }
+.run-log-line:last-child{border-bottom:0}.run-log-line time{color:var(--muted,#b0bfd1);font-variant-numeric:tabular-nums}.run-log-level{font-size:10px;text-transform:uppercase;font-weight:650;color:var(--accent,#83e5d5)}.run-log-line.is-warning .run-log-level{color:#f4ce83}.run-log-line.is-error .run-log-level{color:#ffb0a4}.run-log-message{overflow-wrap:anywhere;white-space:pre-wrap;color:var(--ink,#e7eef8)}
+.run-log-line>details{grid-column:3;min-width:0}.run-log-line>details>summary{font-size:11px;color:var(--muted,#b0bfd1);cursor:pointer}.run-log-output { margin-top:16px;overflow-wrap:anywhere;min-width:0; }.run-log-output h4{font-size:13px;margin:0 0 9px}.run-log-output>details{margin-top:10px}.run-log-output>details>summary{cursor:pointer;font-size:12px;color:var(--ink,#e7eef8)}
+.run-log-facts,.run-live-facts{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--muted,#b0bfd1);line-height:1.65;margin:10px 0;overflow-wrap:anywhere}.run-log-fields{display:grid;grid-template-columns:minmax(80px,140px) minmax(0,1fr);gap:6px 12px;font-size:12px}.run-log-fields dt{color:var(--muted,#b0bfd1)}.run-log-fields dd{margin:0;min-width:0;overflow-wrap:anywhere}.run-logs-preference small{display:block;color:var(--muted,#b0bfd1);font-weight:400;line-height:1.6;margin-top:4px}
+@media(max-width:650px){.run-log-line{grid-template-columns:70px 50px minmax(0,1fr);gap:5px}.run-log-line>details{grid-column:1/-1}.run-log-toolbar .check-row{margin-left:0}.run-log-body{padding:0 10px 10px}.run-log-lines{padding:8px}.run-log-toolbar .btn{font-size:11px}.activity-logs-toggle{font-size:11px;padding-inline:7px}.run-log-fields{grid-template-columns:90px minmax(0,1fr)}}
+@media(max-width:800px){.activity-logs-toggle{font-size:0}.activity-logs-toggle::before{content:"Logs";font-size:11px}.activity-logs-toggle[aria-pressed="true"]::before{content:"Logs on"}}
+.progress-track.is-indeterminate{overflow:hidden}.progress-track.is-indeterminate .progress-fill{width:30%!important;animation:run-indeterminate 1.8s ease-in-out infinite}@keyframes run-indeterminate{from{transform:translateX(-100%)}to{transform:translateX(400%)}}@media(prefers-reduced-motion:reduce){.progress-track.is-indeterminate .progress-fill{animation:none;transform:none}}

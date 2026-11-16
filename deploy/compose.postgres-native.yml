@@ -1,0 +1,13 @@
+# Optional native-volume storage; restore and verify a current dump before use.
+# Load after compose.postgres.yml. No new host database port is exposed.
+services:
+  postgres:
+    volumes:
+      - type: volume
+        source: postgres_native
+        target: /var/lib/postgresql
+
+volumes:
+  postgres_native:
+    external: true
+    name: ${LEAKSCOPE_POSTGRES_NATIVE_VOLUME:-leakscope_postgres_native}

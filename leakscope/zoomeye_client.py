@@ -21,8 +21,15 @@ class ZoomEyeClient:
         self.session = session or requests.Session()
         self.log = logging.getLogger(__name__)
 
+    def _safe_error(self, value):
+        return str(value).replace(self.api_key, "[REDACTED]")[:2000]
+
     def _request(self, method: str, path: str, params: Optional[Dict[str, Any]] = None,
                  json_body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        from django.conf import settings
+        if settings.configured and getattr(settings, 'LEAKSCOPE_PROVIDER_THROTTLE', False):
+            from leakscope.phase3.rate_limit import throttle
+            throttle('zoomeye')
         url = f"{self.BASE_URL}{path}"
         headers = {
             "API-KEY": self.api_key,
@@ -39,7 +46,7 @@ class ZoomEyeClient:
                 timeout=self.timeout,
             )
         except requests.RequestException as exc:
-            raise ZoomEyeClientError(f"Failed to contact ZoomEye API: {exc}") from exc
+            raise ZoomEyeClientError(self._safe_error(f"Failed to contact ZoomEye API: {exc}")) from None
 
         if resp.status_code in (401, 403):
             raise ZoomEyeClientError("Invalid ZoomEye API key or permission denied")
@@ -47,7 +54,7 @@ class ZoomEyeClient:
         try:
             resp.raise_for_status()
         except requests.HTTPError as exc:
-            raise ZoomEyeClientError(f"ZoomEye API returned HTTP {resp.status_code}: {resp.text}") from exc
+            raise ZoomEyeClientError(self._safe_error(f"ZoomEye API returned HTTP {resp.status_code}: {resp.text}")) from None
 
         try:
             return resp.json()

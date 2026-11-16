@@ -1,0 +1,27 @@
+webserver:
+  listen_addr: "0.0.0.0"
+  listen_port: 8080
+  real_ip: false
+  whitelist: []
+  full_url: "/full-stream"
+  lite_url: "/"
+  domains_only_url: "/domains-only"
+  compression_enabled: false
+prometheus:
+  enabled: true
+  listen_addr: "0.0.0.0"
+  listen_port: 8080
+  metrics_url: "/metrics"
+  expose_system_metrics: false
+  whitelist: []
+stream_processing: []
+general:
+  disable_default_logs: false
+  drop_old_logs: true
+  buffer_sizes:
+    websocket: 100
+    ctlog: 200
+    dispatcher: 2000
+  recovery:
+    enabled: true
+    ct_index_file: "/data/certstream/ct_index.json"

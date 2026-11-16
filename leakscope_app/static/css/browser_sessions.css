@@ -1,0 +1,13 @@
+.browser-session-dialog{width:min(1100px,96vw);max-width:min(1100px,96vw);max-height:94vh;overflow:auto;padding:1.25rem;color:var(--ink,#1d3029);background:var(--paper,#fff);border:1px solid var(--rule,#e4e9e2);border-radius:14px}
+.browser-session-dialog .dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;position:sticky;top:-1.25rem;z-index:2;background:var(--paper,#fff);padding:.75rem 0}
+.browser-session-viewport{width:fit-content;max-width:100%;margin-inline:auto;overflow:hidden;background:#131820;border:1px solid var(--rule,#e4e9e2);border-radius:8px;min-height:180px;line-height:0}
+.browser-session-viewport:focus-visible{outline:3px solid var(--accent,#178363);outline-offset:2px}
+.browser-session-viewport img{display:block;width:auto;max-width:100%;height:auto;max-height:max(180px,calc(100dvh - 400px));cursor:crosshair;user-select:none}
+.browser-session-controls{display:grid;gap:.75rem;margin:1rem 0}
+.browser-session-text{display:flex;align-items:end;gap:.75rem}.browser-session-text label{flex:1;min-width:0}
+.browser-session-text .input{width:100%}.browser-session-controls[aria-busy=true]{opacity:.65;pointer-events:none}
+.browser-session-controls .row-actions{display:flex;flex-wrap:wrap;gap:.5rem}.browser-session-controls .select{width:auto}
+.browser-session-output .notice{overflow-wrap:anywhere}.ops-browser-editor{border:1px solid var(--rule,#e4e9e2);border-radius:8px;padding:1rem;margin:1rem 0}.ops-browser-editor[hidden],.browser-session-viewport[hidden],.browser-session-controls[hidden]{display:none}
+@media(max-width:600px){.browser-session-dialog{width:96vw;padding:.75rem}.browser-session-dialog .dialog-heading{top:-.75rem}.browser-session-dialog h2{font-size:1.1rem}.browser-session-text{align-items:stretch;flex-direction:column}.browser-session-controls .btn{min-height:40px}.ops-browser-editor .field-grid{grid-template-columns:1fr}}
+
+.browser-session-text input,.browser-session-controls select{border:1px solid var(--rule,#e4e9e2);border-radius:8px;padding:10px 12px;background:var(--paper,#fff);color:var(--ink,#1d3029);font:inherit}.browser-session-text input:focus,.browser-session-controls select:focus{outline:2px solid var(--accent,#178363);outline-offset:1px}

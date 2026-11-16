@@ -1,0 +1,5 @@
+# Load after docker-compose.yml. Use a separate project name and data root.
+services:
+  web:
+    ports: !override
+      - "127.0.0.1:2629:8000"

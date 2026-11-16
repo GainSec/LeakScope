@@ -1,21 +1,86 @@
-MIT License
+LeakScope Personal Use License 1.0
 
-Copyright (c) 2025 GainSec
+Copyright (c) 2025-2026 GainSec (https://gainsec.com). All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Definitions
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+"Software" means LeakScope, including its source code, documentation and
+any part of it, in this version and in any modified form.
+
+"Licensor" means GainSec.
+
+"Personal Use" means use by one individual person, for that person's own
+private purposes, where neither the use nor its results are for, on behalf
+of, paid for by, or delivered to any Organization or any other person in
+exchange for payment or other compensation. Personal study, hobby projects
+and security research done on your own behalf are Personal Use.
+
+"Organization" means any company, partnership, sole trader acting in the
+course of business, government body or agency, military or law-enforcement
+body, public or private research institution, university, school,
+charity, non-profit, or any other legal entity or group, whether or not it
+operates for profit.
+
+"Commercial Use" means any use that is not Personal Use. It includes, for
+example: use by or on behalf of an Organization; use by an employee,
+contractor or student in the course of their work or duties; use to deliver
+consulting, assessments, monitoring or any other paid or funded work; use
+in funded research; offering the Software or its functions to others as a
+hosted or managed service; and incorporating the Software, or any part of
+it, into another product or service.
+
+2. Personal Use grant
+
+Subject to these terms, the Licensor grants you a free, non-exclusive,
+non-transferable, revocable licence to install, run and modify the Software
+for Personal Use only.
+
+You may share unmodified or modified copies with other individuals, free
+of charge, for their Personal Use only, provided that every copy includes
+this licence and the copyright notice above, and that modified copies
+clearly state that they have been changed.
+
+3. Commercial Use
+
+Commercial Use is not permitted under this licence. It requires a separate
+written commercial licence purchased from the Licensor. See COMMERCIAL.md
+or contact leakscope@gainsecmail.com.
+
+4. Restrictions
+
+You may not sell, rent, sublicense or otherwise charge for the Software;
+remove or alter this licence or any copyright notice; or use the
+Licensor's names, logos or trademarks except to state accurately where the
+Software came from.
+
+You are responsible for using the Software lawfully, including having
+authorization for any system you contact with it.
+
+5. Third-party material
+
+Parts of the Software that come from third parties remain under their own
+licences, which continue to apply to those parts.
+
+6. Termination
+
+This licence ends automatically if you breach it. When it ends you must
+stop using the Software and delete your copies. Sections 4 to 8 continue
+to apply.
+
+7. No warranty
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NON-INFRINGEMENT.
+
+8. Limitation of liability
+
+TO THE FULLEST EXTENT PERMITTED BY LAW, THE LICENSOR SHALL NOT BE LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM OR RELATED TO THE
+SOFTWARE OR ITS USE, WHETHER IN CONTRACT, TORT OR OTHERWISE.
+
+9. Earlier versions
+
+Versions of the Software that the Licensor previously published under the
+MIT License remain available under that licence. This licence applies to
+this version and to later versions.

@@ -1,501 +1,261 @@
-from celery import shared_task
-import logging
-import json
-import os
-from pathlib import Path
-from uuid import uuid4
-import requests
-import celery
-from git import Repo
-import tempfile
-from celery.exceptions import Ignore
-import celery_progress
-from hurry.filesize import size
-from bs4 import BeautifulSoup
-from celery import shared_task, current_task
-from celery_progress.backend import ProgressRecorder
-import smtplib
-import ast
-import email.message
-import math
-import re
-import jsbeautifier
-from gzip import GzipFile
-import ssl
-from typing import Any, Dict, Optional, Tuple, List
-import ftplib
-import socket
-from pymongo import MongoClient
-from cassandra.cluster import Cluster, NoHostAvailable, ExecutionProfile, EXEC_PROFILE_DEFAULT, DCAwareRoundRobinPolicy
-from cassandra.query import SimpleStatement
-from cassandra.auth import PlainTextAuthProvider
-from bson import json_util
+from leakscope.services.registry import canonical_type, model_for_type, discovery_handler, dispatch_discovery, preview_for_type
+"""Stable Celery task facade and run orchestration.
 
-try:
-    from StringIO import StringIO
-    readBytesCustom = StringIO
-except ImportError:
-    from io import BytesIO
-    readBytesCustom = BytesIO
-
-from urllib.request import Request, urlopen
-
-import hashlib
-import base64
-from django.utils import timezone
-from urllib.parse import urlparse
-import jxmlease
-
-
-from leakscope_app.models import Monitor, Search, Rethink, Cassandra, Gitlab, Elastic, Dirs, Jenkins, Mongo, Rsync, \
-    Sonarqube, Couchdb, Kibana, Ftp, Amazonbe, AmazonBuckets, Keys, Github, Amazons3be, Angular, Javascript, \
-    OpenSearch, Grafana, Prometheus, Minio, Swagger, MongoExpress, FingerprintLog, CustomQuery, Nexus, Artifactory, Registry, \
-    Etcd, ConsulKV, Rabbitmq, Solr, Gitea, Gogs, AzureBlob, GcsBucket
-from leakscope.shodan_client import ShodanClient, ShodanClientError
-from leakscope.zoomeye_client import ZoomEyeClient, ZoomEyeClientError, normalize_match
-
-broker_url = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
-app = celery.Celery('leakscope', broker=broker_url, backend=broker_url)
-logger = logging.getLogger(__name__)
-
-def _env_list(name: str):
-    raw = os.environ.get(name, "")
-    return [item.strip() for item in raw.split(",") if item.strip()]
-
-
-def get_config():
-    cfg = {
-        "config": {
-            "SHODAN_API_KEY": os.environ.get("SHODAN_API_KEY", ""),
-            "ZOOMEYE_API_KEY": os.environ.get("ZOOMEYE_API_KEY", ""),
-            "ZOOMEYE_TIMEOUT": os.environ.get("ZOOMEYE_TIMEOUT", ""),
-            "ZOOMEYE_SUBTYPE": os.environ.get("ZOOMEYE_SUBTYPE", "all"),
-            "ZOOMEYE_PAGESIZE": os.environ.get("ZOOMEYE_PAGESIZE", "1"),
-            "monitoring": {
-                "gmail_email": os.environ.get("GMAIL_EMAIL", ""),
-                "gmail_password": os.environ.get("GMAIL_PASSWORD", ""),
-            },
-            "blacklist": _env_list("BLACKLIST"),
-        }
-    }
-
-    # Optionally merge config.json if it exists as a file.
-    try:
-        if os.path.isfile("config.json"):
-            with open("config.json", "r") as config_file:
-                file_cfg = json.load(config_file)
-                if isinstance(file_cfg, dict):
-                    file_section = file_cfg.get("config", {})
-                    cfg["config"]["blacklist"].extend(file_section.get("blacklist", []))
-                    monitor_section = file_section.get("monitoring", {})
-                    if monitor_section:
-                        cfg["config"]["monitoring"].update(monitor_section)
-                    if file_section.get("SHODAN_API_KEY"):
-                        cfg["config"]["SHODAN_API_KEY"] = file_section.get("SHODAN_API_KEY")
-                    if file_section.get("ZOOMEYE_API_KEY"):
-                        cfg["config"]["ZOOMEYE_API_KEY"] = file_section.get("ZOOMEYE_API_KEY")
-                    if file_section.get("ZOOMEYE_TIMEOUT"):
-                        cfg["config"]["ZOOMEYE_TIMEOUT"] = file_section.get("ZOOMEYE_TIMEOUT")
-                    if file_section.get("ZOOMEYE_SUBTYPE"):
-                        cfg["config"]["ZOOMEYE_SUBTYPE"] = file_section.get("ZOOMEYE_SUBTYPE")
-                    if file_section.get("ZOOMEYE_PAGESIZE"):
-                        cfg["config"]["ZOOMEYE_PAGESIZE"] = file_section.get("ZOOMEYE_PAGESIZE")
-    except Exception:
-        logger.exception("Failed to read config.json; using environment configuration only")
-
-    cfg["config"]["blacklist"] = list({item for item in cfg["config"]["blacklist"]})
-    return cfg
-
-
-def is_blacklisted(value: str, config: Dict[str, Any]) -> bool:
-    return value in config.get("config", {}).get("blacklist", [])
-
-
-def _fingerprint(type_name: str, ip: str, port: Any) -> str:
-    raw = f"{type_name}|{ip}|{port or ''}"
-    return hashlib.sha256(raw.encode()).hexdigest()
-
-
-def record_fingerprint(type_name: str, ip: str, port: Any) -> str:
-    if not ip:
-        return "unknown"
-    fp = _fingerprint(type_name, ip, port)
-    try:
-        obj, created = FingerprintLog.objects.get_or_create(
-            fingerprint=fp,
-            defaults={"type": type_name, "ip": ip, "port": str(port or ""), "status": "new"},
-        )
-        if created:
-            return "new"
-        obj.seen_count += 1
-        obj.status = "seen_before"
-        obj.save(update_fields=["seen_count", "status", "last_seen"])
-        return "seen_before"
-    except Exception as exc:  # pragma: no cover
-        logger.debug("Fingerprint tracking failed for %s %s:%s - %s", type_name, ip, port, exc)
-        return "unknown"
-
-regex_str = r"""
-  (?:"|')                               # Start newline delimiter
-  (
-    ((?:[a-zA-Z]{1,10}://|//)           # Match a scheme [a-Z]*1-10 or //
-    [^"'/]{1,}\.                        # Match a domainname (any character + dot)
-    [a-zA-Z]{2,}[^"']{0,})              # The domainextension and/or path
-    |
-    ((?:/|\.\./|\./)                    # Start with /,../,./
-    [^"'><,;| *()(%%$^/\\\[\]]          # Next character can't be...
-    [^"'><,;|()]{1,})                   # Rest of the characters can't be
-    |
-    ([a-zA-Z0-9_\-/]{1,}/               # Relative endpoint with /
-    [a-zA-Z0-9_\-/]{1,}                 # Resource name
-    \.(?:[a-zA-Z]{1,4}|action)          # Rest + extension (length 1-4 or action)
-    (?:[\?|#][^"|']{0,}|))              # ? or # mark with parameters
-    |
-    ([a-zA-Z0-9_\-/]{1,}/               # REST API (no extension) with /
-    [a-zA-Z0-9_\-/]{3,}                 # Proper REST endpoints usually have 3+ chars
-    (?:[\?|#][^"|']{0,}|))              # ? or # mark with parameters
-    |
-    AIza[0-9A-Za-z-_]{35}
-    |
-    (xox[p|b|o|a]-[0-9]{12}-[0-9]{12}-[0-9]{12}-[a-z0-9]{32})
-    |
-    AKIA[0-9A-Z]{16}
-    |
-    amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
-    |
-    EAACEdEose0cBA[0-9A-Za-z]+
-    |
-    [f|F][a|A][c|C][e|E][b|B][o|O][o|O][k|K].*['|"][0-9a-f]{32}['|"]
-    |
-    [g|G][i|I][t|T][h|H][u|U][b|B].*['|"][0-9a-zA-Z]{35,40}['|"]
-    |
-    [a|A][p|P][i|I][_]?[k|K][e|E][y|Y].*['|"][0-9a-zA-Z]{32,45}['|"]
-    |
-    [s|S][e|E][c|C][r|R][e|E][t|T].*['|"][0-9a-zA-Z]{32,45}['|"]
-    |
-    [0-9]+-[0-9A-Za-z_]{32}\.apps\.googleusercontent\.com
-    |
-    ya29\.[0-9A-Za-z\-_]+
-    |
-    [h|H][e|E][r|R][o|O][k|K][u|U].*[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}
-    |
-    [a-zA-Z]{3,10}://[^/\s:@]{3,20}:[^/\s:@]{3,20}@.{1,100}["'\s]
-    |
-    sk_live_[0-9a-zA-Z]{24}
-    |
-    https://hooks.slack.com/services/T[a-zA-Z0-9_]{8}/B[a-zA-Z0-9_]{8}/[a-zA-Z0-9_]{24}
-    |
-    [t|T][w|W][i|I][t|T][t|T][e|E][r|R].*[1-9][0-9]+-[0-9a-zA-Z]{40}
-    |
-    ([a-zA-Z0-9_\-]{1,}                 # filename
-    \.(?:php|asp|aspx|jsp|json|
-         action|html|js|txt|xml)        # . + extension
-    (?:[\?|#][^"|']{0,}|))              # ? or # mark with parameters
-  )
-  (?:"|')                               # End newline delimiter
+Implementations live in providers, handlers, previews and exporters; existing
+public imports and serialized task names remain compatible.
 """
+from leakscope.shared import (
+    shared_task,
+    logging,
+    json,
+    os,
+    Path,
+    uuid4,
+    requests,
+    celery,
+    Repo,
+    tempfile,
+    Ignore,
+    celery_progress,
+    size,
+    BeautifulSoup,
+    current_task,
+    ProgressRecorder,
+    smtplib,
+    ast,
+    email,
+    math,
+    re,
+    jsbeautifier,
+    GzipFile,
+    ssl,
+    Any,
+    Dict,
+    Optional,
+    Tuple,
+    List,
+    ftplib,
+    socket,
+    MongoClient,
+    Cluster,
+    NoHostAvailable,
+    ExecutionProfile,
+    EXEC_PROFILE_DEFAULT,
+    DCAwareRoundRobinPolicy,
+    SimpleStatement,
+    PlainTextAuthProvider,
+    json_util,
+    Request,
+    urlopen,
+    hashlib,
+    base64,
+    timezone,
+    urlparse,
+    jxmlease,
+    Monitor,
+    Search,
+    Rethink,
+    Cassandra,
+    Gitlab,
+    Elastic,
+    Dirs,
+    Jenkins,
+    Mongo,
+    Rsync,
+    Sonarqube,
+    Couchdb,
+    Kibana,
+    Ftp,
+    Amazonbe,
+    AmazonBuckets,
+    Keys,
+    Github,
+    Amazons3be,
+    Angular,
+    Javascript,
+    OpenSearch,
+    Grafana,
+    Prometheus,
+    Minio,
+    Swagger,
+    MongoExpress,
+    FingerprintLog,
+    CustomQuery,
+    Nexus,
+    Artifactory,
+    Registry,
+    Etcd,
+    ConsulKV,
+    Rabbitmq,
+    Solr,
+    Gitea,
+    Gogs,
+    AzureBlob,
+    GcsBucket,
+    ShodanClient,
+    ShodanClientError,
+    ZoomEyeClient,
+    ZoomEyeClientError,
+    normalize_match,
+    app,
+    settings,
+    get_config,
+    redact,
+    canonical_fingerprint,
+    publish_state,
+    logger,
+    _env_list,
+    is_blacklisted,
+    _fingerprint,
+    record_fingerprint,
+    regex_str,
+    context_delimiter_str,
+    buckets_all,
+    keys_all,
+    BASE64_CHARS,
+    HEX_CHARS,
+    exclude,
+    _load_wordlist,
+    buckets_bruteforce,
+    azure_buckets_bruteforce,
+    gcs_buckets_bruteforce,
+    build_shodan_query,
+    build_provider_query,
+    render_query_template,
+    infer_scheme,
+    build_service_url,
+    get_http_html,
+    parse_json_payload,
+    extract_ip_port,
+    _safe_int,
+    _json_safe,
+    _write_export_file,
+    _limit_max,
+    _http_base,
+    _parse_link_next,
+    _infer_host,
+    parse_bucket,
+    shannon_entropy,
+    clone_git_repo,
+    get_strings_of_set,
+    get_secrets,
+    rules
+)
 
-context_delimiter_str = "\n"
+from leakscope.providers.discovery import (
+    queries_shodan,
+    queries_zoomeye,
+    get_shodan_client,
+    get_zoomeye_client,
+    provider_queries,
+    check_credits,
+    stats
+)
 
-queries_shodan = {
-    "gitlab": 'http.title:"GitLab"',
-    "elastic": 'product:"Elastic" port:9200',
-    "dirs": 'http.title:"Index of /" http.status:200',
-    "jenkins": 'http.title:"Dashboard [Jenkins]"',
-    "mongo": 'product:"MongoDB"',
-    "rsync": 'port:873 "@RSYNCD"',
-    "sonarqube": 'http.title:"SonarQube"',
-    "couchdb": 'product:"CouchDB"',
-    "kibana": 'product:"Kibana"',
-    "cassandra": 'product:"Cassandra" port:9160',
-    "rethink": 'http.title:"RethinkDB Administration Console"',
-    "ftp": 'port:21 "230" "anonymous"',
-    "asia": 'hostname:"s3.ap-southeast-1.amazonaws.com"',
-    "europe": 'hostname:"s3-eu-west-1.amazonaws.com"',
-    "north america": 'hostname:"s3-us-west-2.amazonaws.com"',
-    "api_key": 'http.html:"api_key" -http.title:"swagger"',
-    "stripe": 'http.html:"STRIPE_KEY"',
-    "secret_key": 'http.html:"secret_key" -http.title:"swagger"',
-    "google_api_key": 'http.html:"google_api_key"',
-    "amazons3be": 'http.html:"ListBucketResult" "amazonaws.com"',
-    "angular": 'http.html:"polyfills" http.html:"main." http.html:"runtime"',
-    "opensearch": 'product:"OpenSearch" port:9200',
-    "grafana": 'http.title:"Grafana"',
-    "prometheus": 'http.title:"Prometheus Time Series Collection and Processing Server"',
-    "minio": 'http.title:"MinIO Browser" OR product:"MinIO"',
-    "swagger": 'http.title:"swagger" OR http.title:"Swagger UI" OR http.title:"API Documentation"',
-    "mongoexpress": 'http.title:"Mongo Express"',
-    "nexus": 'http.title:"Nexus Repository Manager"',
-    "artifactory": 'http.title:"Artifactory"',
-    # Keep registry query simple to avoid Shodan parse issues; users can extend via custom queries.
-    "registry": 'http.title:"Docker Registry"',
-    "harbor": 'http.title:"Harbor"',
-    "dockerapi": '"docker-distribution-api"',
-    "etcd": 'product:"etcd" port:2379',
-    "consul": 'product:"Consul" port:8500',
-    "rabbitmq": 'http.title:"RabbitMQ Management" port:15672',
-    # Single primary query; variants are handled in code fallbacks (still one page/credit).
-    "solr": 'product:"Solr"',
-    "gitea": 'http.title:"Gitea" port:3000',
-    "gogs": 'http.title:"Gogs" port:3000',
-    "azureblob": 'http.title:"Azure Blob Storage" OR product:"Azure Blob"',
-    "gcsbucket": 'http.title:"Index of /storage.googleapis.com" OR product:"Google Cloud Storage"',
-}
+from leakscope.handlers.discovery import (
+    check_amazons3be,
+    check_rethink,
+    check_cassandra,
+    check_etcd,
+    check_consul,
+    check_rabbitmq,
+    check_azureblob,
+    check_gcsbucket,
+    check_solr,
+    check_gitea,
+    check_ftp,
+    check_kibana,
+    check_couchdb,
+    check_sonarqube,
+    check_rsync,
+    check_jenkins,
+    check_mongo,
+    parser_file,
+    check_dir,
+    send_request,
+    check_angular,
+    check_elastic,
+    check_opensearch,
+    check_grafana,
+    check_prometheus,
+    check_minio,
+    check_swagger,
+    check_mongoexpress,
+    check_nexus,
+    check_artifactory,
+    check_registry,
+    getContext,
+    check_gitlab,
+    check_keys,
+    check_amazonbe
+)
 
-# ZoomEye-specific dorks, tuned to its schema where possible.
-queries_zoomeye = {
-    "gitlab": 'title:"GitLab" app:"GitLab"',
-    "elastic": 'app:"Elasticsearch" port:9200',
-    "dirs": 'title:"Index of /" status:200',
-    "jenkins": 'title:"Dashboard [Jenkins]"',
-    "mongo": 'app:"MongoDB"',
-    "rsync": 'port:873 "@RSYNCD"',
-    "sonarqube": 'title:"SonarQube"',
-    "couchdb": 'app:"CouchDB"',
-    "kibana": 'app:"Kibana"',
-    "cassandra": 'app:"Cassandra" port:9160',
-    "rethink": 'title:"RethinkDB Administration Console"',
-    "ftp": 'port:21 "230" "anonymous"',
-    "asia": 'hostname:"s3.ap-southeast-1.amazonaws.com"',
-    "europe": 'hostname:"s3-eu-west-1.amazonaws.com"',
-    "north america": 'hostname:"s3-us-west-2.amazonaws.com"',
-    "api_key": 'body:"api_key"',
-    "stripe": 'body:"STRIPE_KEY"',
-    "secret_key": 'body:"secret_key"',
-    "google_api_key": 'body:"google_api_key"',
-    "amazons3be": 'body:"ListBucketResult" "amazonaws.com"',
-    "angular": 'body:"polyfills" body:"main." body:"runtime"',
-    "opensearch": 'app:"OpenSearch" port:9200',
-    "grafana": 'title:"Grafana"',
-    "prometheus": 'title:"Prometheus"',
-    "minio": 'title:"MinIO Browser" OR app:"MinIO"',
-    "swagger": 'title:"swagger" OR title:"Swagger UI" OR title:"API Documentation"',
-    "mongoexpress": 'title:"Mongo Express"',
-    "nexus": 'title:"Nexus Repository Manager"',
-    "artifactory": 'title:"Artifactory"',
-    "registry": 'title:"Docker Registry"',
-    "harbor": 'title:"Harbor"',
-    "dockerapi": '"docker-distribution-api"',
-    "etcd": 'app:"etcd" port:2379',
-    "consul": 'app:"Consul" port:8500',
-    "rabbitmq": 'title:"RabbitMQ Management" port:15672',
-    "solr": 'app:"Solr"',
-    "gitea": 'title:"Gitea" port:3000',
-    "gogs": 'title:"Gogs" port:3000',
-    "azureblob": 'title:"Azure Blob Storage" OR app:"Azure Blob"',
-    "gcsbucket": 'title:"Index of /storage.googleapis.com" OR app:"Google Cloud Storage"',
-}
+from leakscope.previews.services import (
+    _preview_elastic,
+    _preview_dirs,
+    _preview_nexus,
+    _preview_artifactory,
+    _preview_registry,
+    _preview_gitlab,
+    _preview_sonarqube,
+    _preview_kibana,
+    _preview_grafana,
+    _preview_prometheus,
+    _preview_swagger,
+    _preview_minio,
+    _preview_angular,
+    _preview_cassandra,
+    _preview_rethink,
+    _preview_keys,
+    _preview_amazonbe,
+    _preview_javascript,
+    _preview_github,
+    _preview_jenkins,
+    _preview_ftp,
+    _preview_couch,
+    _preview_s3,
+    _preview_mongo,
+    _preview_rsync,
+    _preview_etcd,
+    _preview_consul,
+    _preview_rabbitmq,
+    _preview_solr,
+    _preview_gitea,
+    _preview_azureblob,
+    _preview_gcsbucket
+)
 
-buckets_all = [
-    "s3.ap-southeast-1.amazonaws.com",
-    "s3.ap-southeast-2.amazonaws.com",
-    "s3-eu-west-1.amazonaws.com",
-    "s3-eu-west-2.amazonaws.com",
-    "s3-us-west-2.amazonaws.com",
-    "s3-us-west-1.amazonaws.com"
-]
-keys_all = ['api_key','stripe','secret_key','google_api_key']
-BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
-HEX_CHARS = "1234567890abcdefABCDEF"
+from leakscope.exporters.service import (
+    export_preview_data
+)
 
-exclude = ['.png','.jpg', '.sum', "yarn.lock", "package-lock.json", ".svg", ".css"]
-
-def _load_wordlist(fname: str) -> list:
-    try:
-        with open(fname, "r") as f:
-            return f.readlines()
-    except Exception:
-        return []
-
-# Default S3 list
-buckets_bruteforce = _load_wordlist("buckets.txt")
-# Service-specific fallbacks
-azure_buckets_bruteforce = _load_wordlist("azure-buckets.txt") or buckets_bruteforce
-gcs_buckets_bruteforce = _load_wordlist("gcs-buckets.txt") or buckets_bruteforce
-
-def get_shodan_client() -> ShodanClient:
-    config = get_config()
-    api_key = config['config'].get('SHODAN_API_KEY', '')
-    return ShodanClient(api_key)
-
-
-def get_zoomeye_client() -> ZoomEyeClient:
-    config = get_config()
-    api_key = config['config'].get('ZOOMEYE_API_KEY', '')
-    timeout = int(config['config'].get('ZOOMEYE_TIMEOUT', 30)) if str(config['config'].get('ZOOMEYE_TIMEOUT', '')).isdigit() else 30
-    return ZoomEyeClient(api_key, timeout=timeout)
-
-
-def provider_queries(provider: str) -> Dict[str, str]:
-    if (provider or '').lower() == 'zoomeye':
-        return queries_zoomeye
-    return queries_shodan
-
-
-def build_shodan_query(base_query: str, keyword: Optional[str] = None, country: Optional[str] = None,
-                       network: Optional[str] = None, exclude: Optional[str] = None) -> str:
-    parts = [base_query] if base_query else []
-
-    if keyword:
-        keyword = keyword.strip()
-        if keyword:
-            if ' ' in keyword:
-                parts.append(f'"{keyword}"')
-            else:
-                parts.append(keyword)
-
-    if country:
-        parts.append(f"country:{country}")
-
-    if network:
-        network = network.strip()
-        if network:
-            if '/' in network:
-                parts.append(f"net:{network}")
-            else:
-                parts.append(f"ip:{network}")
-
-    if exclude:
-        tokens = [t.strip() for t in exclude.split(',') if t.strip()]
-        for token in tokens:
-            if token.startswith('-'):
-                parts.append(token)
-            elif ' ' in token:
-                parts.append(f'-"{token}"')
-            else:
-                parts.append(f"-{token}")
-
-    return " ".join(parts).strip()
-
-
-def build_provider_query(provider: str, base_query: str, keyword: Optional[str] = None,
-                         country: Optional[str] = None, network: Optional[str] = None,
-                         exclude: Optional[str] = None) -> str:
-    # Shodan accepts implicit AND via spaces; ZoomEye prefers explicit && between clauses.
-    built = build_shodan_query(base_query, keyword=keyword, country=country, network=network, exclude=exclude)
-    if (provider or "").lower() == "zoomeye":
-        tokens = built.split()
-        return " && ".join(tokens)
-    return built
-
-
-class _SafeDict(dict):
-    def __missing__(self, key):
-        return ""
-
-
-def render_query_template(template: str, params: Dict[str, Any]) -> str:
-    try:
-        return template.format_map(_SafeDict(**params))
-    except Exception:
-        logger.exception("Failed to render custom query template")
-        return template
-
-
-def infer_scheme(match: Dict[str, Any]) -> str:
-    port = match.get('port')
-    if match.get('ssl') or port in (443, 8443, 9443):
-        return 'https'
-    return 'http'
-
-
-def build_service_url(match: Dict[str, Any], path: str = "") -> str:
-    scheme = infer_scheme(match)
-    ip = match.get('ip_str') or str(match.get('ip'))
-    port = match.get('port')
-    default_port = 443 if scheme == 'https' else 80
-    if port == default_port or port is None:
-        base = f"{scheme}://{ip}"
-    else:
-        base = f"{scheme}://{ip}:{port}"
-    if path and not path.startswith('/'):
-        path = '/' + path
-    return f"{base}{path}"
-
-
-def get_http_html(match: Dict[str, Any]) -> str:
-    http_section = match.get('http') or {}
-    html = http_section.get('html') or http_section.get('body')
-    if isinstance(html, dict):
-        html = html.get('data')
-    if html:
-        return html
-    data = match.get('data')
-    if isinstance(data, str) and data.strip().startswith('<'):
-        return data
-    return ''
-
-
-def parse_json_payload(payload: Any) -> Optional[Dict[str, Any]]:
-    if isinstance(payload, dict):
-        return payload
-    if isinstance(payload, str):
-        try:
-            return json.loads(payload)
-        except ValueError:
-            return None
-    return None
-
-
-def extract_ip_port(match: Dict[str, Any]) -> Tuple[str, Optional[int]]:
-    ip = match.get('ip_str') or str(match.get('ip'))
-    port = match.get('port')
-    return ip, port
-
-def check_credits(provider: str = "shodan"):
-    provider = (provider or "shodan").lower()
-    if provider == "zoomeye":
-        try:
-            client = get_zoomeye_client()
-            info = client.userinfo() or {}
-            data = info.get("data") or {}
-            subscription = data.get("subscription") or info.get("subscription") or {}
-            # Prefer zoomeye_points if present, else points.
-            return subscription.get("zoomeye_points") or subscription.get("points") or data.get("zoomeye_points") or data.get("points") or 0
-        except ZoomEyeClientError as exc:
-            logger.error("Unable to fetch ZoomEye points: %s", exc)
-        except Exception as exc:  # pragma: no cover - defensive catch
-            logger.exception("Unexpected error while fetching ZoomEye points")
-        return 0
-
-    try:
-        client = get_shodan_client()
-        info = client.info()
-        return info.get('query_credits', 0)
-    except ShodanClientError as exc:
-        logger.error("Unable to fetch Shodan credits: %s", exc)
-    except Exception as exc:  # pragma: no cover - defensive catch
-        logger.exception("Unexpected error while fetching Shodan credits")
-    return 0
-
-
-def stats(type=None, provider: str = "shodan"):
-    if not type:
-        return 0
-
-    qmap = provider_queries(provider)
-    query = qmap.get(type)
-    if not query:
-        return 0
-
-    # For ZoomEye, live count may not be available; callers should rely on DB counts.
-    if (provider or "").lower() == "zoomeye":
-        return 0
-
-    try:
-        client = get_shodan_client()
-        response = client.host_count(query)
-        return response.get('total', 0)
-    except ShodanClientError as exc:
-        logger.error("Unable to fetch Shodan stats for %s: %s", type, exc)
-    except Exception as exc:  # pragma: no cover - defensive catch
-        logger.exception("Unexpected error while fetching Shodan stats for %s", type)
-    return 0
+def _demo_query_result(provider, query, config, type_name):
+    """Use provider evidence only; legacy handlers can perform direct probes."""
+    from leakscope.phase3.providers import search_provider
+    from leakscope.phase3.state import ingest_observation
+    result=search_provider(provider,query,config,demo=True)
+    endpoint_ids=[];payload={};filtered=0
+    for row in result.get('observations',[])[:1]:
+        metadata=row.get('metadata') or {}
+        if is_blacklisted(row.get('address',''),{'config':config}) or is_blacklisted(metadata.get('resolved_ip',''),{'config':config}):
+            filtered+=1;continue
+        if not row.get('service_type'):
+            row=dict(row,service_type=type_name,metadata=dict(metadata,service_type_basis='Requested legacy Demo search profile; identity not verified'))
+        endpoint=ingest_observation(provider,row)
+        endpoint_ids.append(str(endpoint.pk))
+        payload[0]={0:{'ip':endpoint.address,'port':str(endpoint.port),'endpoint_id':str(endpoint.pk),'title':endpoint.title}}
+    return {key:value for key,value in result.items() if key!='observations'} | {
+        'type':type_name or 'custom','provider':provider,'total':len(endpoint_ids),'events':result.get('total',0),
+        'results':payload,'endpoint_ids':endpoint_ids,'stored':len(endpoint_ids),'filtered':filtered,
+        'completed_pages':result.get('pages',0),'requested_pages':1,'results_url':'/assets/',
+        'partial':bool(result.get('partial') or filtered),'automatic_target_requests':False}
 
 
 @shared_task(bind=True)
 def check_main(self, fk, keyword=None, country=None, network=None, page=None, page_count=None, type=None, exclude=None,
-               active_probe=False, provider: str = "shodan", zoomeye_pagesize=None):
+               active_probe=False, provider: str = "shodan", zoomeye_pagesize=None, demo=False):
+    from leakscope.phase3.usage_policy import validate_demo
+    demo=validate_demo(demo)
     config = get_config()
     search = Search.objects.get(id=fk)
     progress_recorder = ProgressRecorder(self)
@@ -503,6 +263,7 @@ def check_main(self, fk, keyword=None, country=None, network=None, page=None, pa
 
     provider_lower = (provider or getattr(search, "provider", "shodan") or "shodan").lower()
     if provider_lower not in ("shodan", "zoomeye"):
+        if demo:raise ValueError("Legacy Demo requires Shodan or ZoomEye; use normalized discovery for Netlas")
         provider_lower = "shodan"
 
     type_lower = (type or "").lower()
@@ -513,11 +274,18 @@ def check_main(self, fk, keyword=None, country=None, network=None, page=None, pa
     if not base_query and type_lower not in keys_all:
         error_msg = f"Unsupported search type: {type}"
         logger.error(error_msg)
-        self.update_state(state="FAILURE", meta={"error": error_msg})
+        publish_state(self, state="FAILURE", meta={"error": error_msg})
         raise Ignore()
 
     final_query = build_provider_query(provider_lower, base_query, keyword=keyword_for_query, country=country,
                                        network=network, exclude=exclude)
+    if demo:
+        try:
+            meta=_demo_query_result(provider_lower,final_query,config['config'],type_lower)
+            publish_state(self,state='SUCCESS',meta=meta)
+        except Exception as exc:
+            publish_state(self,state='FAILURE',meta={'demo':True,'error':redact(exc),'provider':provider_lower})
+        raise Ignore()
     try:
         page_num = int(page) if page else 1
     except ValueError:
@@ -529,247 +297,87 @@ def check_main(self, fk, keyword=None, country=None, network=None, page=None, pa
     total_pages = max(1, total_pages)
 
     matches = []
+    fetch_errors = []
+    completed_pages = 0
 
     try:
+        events = 0
         if provider_lower == "zoomeye":
             client = get_zoomeye_client()
             sub_type = config['config'].get('ZOOMEYE_SUBTYPE', 'all')
             pagesize_raw = zoomeye_pagesize or config['config'].get('ZOOMEYE_PAGESIZE', 1)
             try:
-                pagesize = int(pagesize_raw)
-            except Exception:
+                pagesize = max(1, min(int(pagesize_raw), 100))
+            except (ValueError, TypeError):
                 pagesize = 1
-            events = 0
             for pnum in range(page_num, page_num + total_pages):
                 response = client.search(final_query, page=pnum, pagesize=pagesize, sub_type=sub_type)
                 raw_matches = response.get('data', []) or []
                 events = max(events, response.get('total', len(raw_matches)))
-                for m in raw_matches:
-                    norm = normalize_match(m)
-                    if not norm.get('ip_str'):
-                        continue
-                    matches.append(norm)
-            total = len(matches)
+                matches.extend(norm for norm in (normalize_match(m) for m in raw_matches) if norm.get('ip_str'))
+                completed_pages += 1
         else:
             client = get_shodan_client()
-            events = 0
+            variants = {
+                'registry': [base_query, qmap.get('harbor', ''), qmap.get('dockerapi', '')],
+                'harbor': [base_query, qmap.get('registry', ''), qmap.get('dockerapi', '')],
+                'dockerapi': [base_query, qmap.get('registry', ''), qmap.get('harbor', '')],
+                'rethink': [base_query, 'product:"RethinkDB"', 'product:"rethinkdb"', 'rethinkdb'],
+                'solr': [base_query, 'http.title:"Apache Solr"', 'http.title:"Solr Admin"'],
+            }.get(type_lower, [base_query])
             for pnum in range(page_num, page_num + total_pages):
-                if type_lower in ("registry", "harbor", "dockerapi"):
-                    query_variants = [
-                        qmap.get(type_lower, ""),
-                        qmap.get("harbor", ""),
-                        qmap.get("dockerapi", ""),
-                    ]
-                    last_exc = None
-                    response = None
-                    for qv in query_variants:
-                        qv = qv.strip()
-                        if not qv:
-                            continue
-                        try:
-                            response = client.host_search(qv, page=pnum)
-                            break
-                        except ShodanClientError as exc:
-                            last_exc = exc
-                            continue
-                    if response is None:
-                        raise last_exc or ShodanClientError("No results for registry")
-                elif type_lower == "rethink":
-                    query_variants = [
-                        qmap.get("rethink", ""),
-                        'product:"RethinkDB"',
-                        'product:"rethinkdb"',
-                        'rethinkdb',
-                    ]
-                    last_exc = None
-                    response = None
-                    for qv in query_variants:
-                        qv = qv.strip()
-                        if not qv:
-                            continue
-                        try:
-                            response = client.host_search(qv, page=pnum)
-                            break
-                        except ShodanClientError as exc:
-                            last_exc = exc
-                            continue
-                    if response is None:
-                        raise last_exc or ShodanClientError("No results for rethinkdb")
-                elif type_lower == "solr":
-                    query_variants = [
-                        qmap.get("solr", "").strip(),
-                        'http.title:"Apache Solr"',
-                        'http.title:"Solr Admin"',
-                    ]
-                    last_exc = None
-                    response = None
-                    for qv in query_variants:
-                        if not qv:
-                            continue
-                        try:
-                            response = client.host_search(qv, page=pnum)
-                            break
-                        except ShodanClientError as exc:
-                            last_exc = exc
-                            continue
-                    if response is None:
-                        raise last_exc or ShodanClientError("No results for solr")
-                else:
-                    response = client.host_search(final_query, page=pnum)
-                page_matches = response.get('matches', [])
+                response = None
+                for variant in dict.fromkeys(variants):
+                    if not variant:
+                        continue
+                    query = build_provider_query(provider_lower, variant, keyword=keyword_for_query,
+                                                 country=country, network=network, exclude=exclude)
+                    try:
+                        response = client.host_search(query, page=pnum)
+                        break
+                    except ShodanClientError as exc:
+                        if 'query' not in str(exc).lower() or 'invalid' not in str(exc).lower():
+                            raise
+                if response is None:
+                    raise ShodanClientError('No supported query variant')
+                page_matches = response.get('matches', []) or []
                 events = max(events, response.get('total', len(page_matches)))
                 matches.extend(page_matches)
-            total = len(matches)
-    except ZoomEyeClientError as exc:
-        logger.error("ZoomEye search failed for %s: %s", type, exc)
-        self.update_state(state="FAILURE", meta={"error": str(exc)})
-        raise Ignore()
-    except ShodanClientError as exc:
-        logger.error("Shodan search failed for %s: %s", type, exc)
-        # Try local fallback for supported types to keep UI responsive.
-        fallback_models = {"nexus": Nexus, "artifactory": Artifactory, "registry": Registry, "harbor": Registry, "dockerapi": Registry}
-        Model = fallback_models.get(type_lower)
-        if Model:
-            objs = list(Model.objects.all()[:100])
-            if objs:
-                for idx, obj in enumerate(objs):
-                    results[idx] = {
-                        "ip": getattr(obj, "ip", ""),
-                        "port": getattr(obj, "port", ""),
-                        "url": getattr(obj, "url", ""),
-                        "title": getattr(obj, "title", ""),
-                        "version": getattr(obj, "version", ""),
-                        "product": getattr(obj, "product", ""),
-                    }
-                events = len(objs)
-                self.update_state(
-                    state="SUCCESS",
-                    meta={"type": type_lower, "total": len(objs), "events": events, "results": results, "error": str(exc)},
-                )
-                raise Ignore()
-        self.update_state(
-            state="SUCCESS",
-            meta={"type": type_lower, "total": 0, "events": 0, "results": {}, "error": str(exc), "empty": True},
-        )
-        raise Ignore()
-    except Exception as exc:  # pragma: no cover - defensive catch
-        logger.exception("Unexpected error during search for %s", type)
-        self.update_state(state="FAILURE", meta={"error": str(exc)})
-        raise Ignore()
+                completed_pages += 1
+        total = len(matches)
+    except Exception as exc:
+        message = redact(exc)
+        if not completed_pages:
+            publish_state(self, state="FAILURE", meta={"error": message, "provider": provider_lower})
+            raise Ignore()
+        # Previously completed paid pages are still processed and persisted.
+        # A failed later request is not retried implicitly.
+        fetch_errors.append(message)
+        total = len(matches)
 
     if provider_lower == "zoomeye" and total == 0:
         # No results from ZoomEye; simply return empty set
         pass
 
     if total == 0:
-        # If Shodan returned nothing, optionally surface existing DB records for select types.
-        if type_lower in ("nexus", "artifactory", "registry", "harbor", "dockerapi"):
-            model_map_fallback = {"nexus": Nexus, "artifactory": Artifactory, "registry": Registry, "harbor": Registry, "dockerapi": Registry}
-            Model = model_map_fallback.get(type_lower)
-            if Model:
-                objs = list(Model.objects.all()[:100])
-                if objs:
-                    for idx, obj in enumerate(objs):
-                        results[idx] = {
-                            "ip": getattr(obj, "ip", ""),
-                            "port": getattr(obj, "port", ""),
-                            "url": getattr(obj, "url", ""),
-                            "title": getattr(obj, "title", ""),
-                            "version": getattr(obj, "version", ""),
-                            "product": getattr(obj, "product", ""),
-                        }
-                    events = len(objs)
-                    self.update_state(state="SUCCESS",
-                                      meta={"type": type_lower, "total": len(objs), 'events': events, 'results': results})
-                    raise Ignore()
-        self.update_state(state="SUCCESS",
-                          meta={"type": type_lower or 'unknown', "total": 0, 'events': events, 'results': results})
+        publish_state(self, state="SUCCESS",
+                          meta={"type": type_lower or 'unknown', "total": 0, 'events': events, 'results': results, 'partial': bool(fetch_errors), 'errors': fetch_errors, 'completed_pages': completed_pages, 'requested_pages': total_pages})
         raise Ignore()
 
     default_total = total if total > 0 else 1
     result_type = 'keys' if type_lower in keys_all else type_lower
 
+    processing_errors = []
     for index, match in enumerate(matches):
         try:
-            if type_lower in keys_all:
-                result_payload = check_keys(index, match, search, config=config)
-                result_type = 'keys'
-            elif type_lower in ('asia', 'europe', 'north america'):
-                result_payload = check_amazonbe(index, match, search, config=config)
-                result_type = type_lower
-            else:
-                result_type = type_lower
-                if type_lower == 'gitlab':
-                    result_payload = check_gitlab(index, match, search, config=config)
-                elif type_lower == 'elastic':
-                    result_payload = check_elastic(index, match, search, keyword=keyword, config=config,
-                                                   active_probe=active_probe)
-                elif type_lower == 'angular':
-                    result_payload = check_angular(index, match, search, keyword=keyword, config=config)
-                elif type_lower == 'amazons3be':
-                    result_payload = check_amazons3be(index, match, search, keyword=keyword, config=config)
-                elif type_lower == 'dirs':
-                    result_payload = check_dir(index, match, search, keyword=keyword, config=config)
-                elif type_lower == 'jenkins':
-                    result_payload = check_jenkins(index, match, search, keyword=keyword, config=config)
-                elif type_lower == 'mongo':
-                    result_payload = check_mongo(index, match, search, keyword=keyword, config=config)
-                elif type_lower == 'rsync':
-                    result_payload = check_rsync(index, match, search, config=config)
-                elif type_lower == 'ftp':
-                    result_payload = check_ftp(index, match, search, keyword=keyword, config=config)
-                elif type_lower == 'sonarqube':
-                    result_payload = check_sonarqube(index, match, search, config=config)
-                elif type_lower == 'couchdb':
-                    result_payload = check_couchdb(index, match, search, config=config)
-                elif type_lower == 'kibana':
-                    result_payload = check_kibana(index, match, search, config=config)
-                elif type_lower == 'cassandra':
-                    result_payload = check_cassandra(index, match, search, config=config)
-                elif type_lower == 'rethink':
-                    result_payload = check_rethink(index, match, search, config=config)
-                elif type_lower == 'opensearch':
-                    result_payload = check_opensearch(index, match, search, keyword=keyword, config=config,
-                                                      active_probe=active_probe)
-                elif type_lower == 'grafana':
-                    result_payload = check_grafana(index, match, search, config=config)
-                elif type_lower == 'prometheus':
-                    result_payload = check_prometheus(index, match, search, config=config)
-                elif type_lower == 'minio':
-                    result_payload = check_minio(index, match, search, config=config)
-                elif type_lower == 'swagger':
-                    result_payload = check_swagger(index, match, search, config=config)
-                elif type_lower == 'mongoexpress':
-                    result_payload = check_mongoexpress(index, match, search, config=config)
-                elif type_lower == 'nexus':
-                    result_payload = check_nexus(index, match, search, config=config)
-                elif type_lower == 'artifactory':
-                    result_payload = check_artifactory(index, match, search, config=config)
-                elif type_lower in ('registry', 'harbor', 'dockerapi'):
-                    result_payload = check_registry(index, match, search, config=config)
-                elif type_lower == 'etcd':
-                    result_payload = check_etcd(index, match, search, config=config, active_probe=active_probe)
-                elif type_lower == 'consul':
-                    result_payload = check_consul(index, match, search, config=config, active_probe=active_probe)
-                elif type_lower == 'rabbitmq':
-                    result_payload = check_rabbitmq(index, match, search, config=config, active_probe=active_probe)
-                elif type_lower == 'solr':
-                    result_payload = check_solr(index, match, search, config=config, active_probe=active_probe)
-                elif type_lower == 'gitea':
-                    result_payload = check_gitea(index, match, search, config=config, active_probe=active_probe, product_hint="gitea")
-                elif type_lower == 'gogs':
-                    result_payload = check_gitea(index, match, search, config=config, active_probe=active_probe, product_hint="gogs")
-                elif type_lower == 'azureblob':
-                    result_payload = check_azureblob(index, match, search, config=config, active_probe=active_probe)
-                elif type_lower == 'gcsbucket':
-                    result_payload = check_gcsbucket(index, match, search, config=config, active_probe=active_probe)
-                else:
-                    logger.warning("No handler implemented for type %s", type_lower)
-                    result_payload = {}
+            result_type = canonical_type(type_lower)
+            result_payload = dispatch_discovery(type_lower,index,match,search,config,
+                                                keyword=keyword,active_probe=active_probe)
 
             results[index] = result_payload
         except Exception as exc:  # pragma: no cover - ensure one failure doesn't break whole batch
-            logger.exception("Failed to process %s result for IP %s", type_lower, match.get('ip_str'))
+            processing_errors.append(redact(exc))
+            logger.error("Handler failed for %s: %s", type_lower, redact(exc))
             results[index] = {}
 
         progress_recorder.set_progress(index + 1, total=default_total)
@@ -782,33 +390,43 @@ def check_main(self, fk, keyword=None, country=None, network=None, page=None, pa
                 status = record_fingerprint(type_lower, ip_addr, port)
                 entry["status"] = status
 
-    self.update_state(state="SUCCESS",
-                      meta={"type": result_type if matches else type_lower, "total": total,
-                            'events': events, 'results': results, 'provider': provider_lower})
+    failed = bool(processing_errors) and len(processing_errors) == len(matches)
+    publish_state(self, state="FAILURE" if failed else "SUCCESS",
+                  meta={"type": result_type if matches else type_lower, "total": total,
+                        'events': events, 'results': results, 'provider': provider_lower,
+                        'partial': bool(fetch_errors or processing_errors) and not failed, 'errors': fetch_errors + processing_errors,
+                        'completed_pages': completed_pages, 'requested_pages': total_pages,
+                        'error': 'All matches failed to process' if failed else ''})
 
     raise Ignore()
 
 
 @shared_task(bind=True)
 def check_custom_query(self, custom_query_id, keyword=None, country=None, network=None, exclude=None, page=None,
-                       page_count=None, active_probe=None, provider: str = "shodan"):
+                       page_count=None, active_probe=None, provider: str = "shodan", demo=False):
+    from leakscope.phase3.usage_policy import validate_demo
+    demo=validate_demo(demo)
     config = get_config()
+    result_type = "custom"
     try:
         custom_query = CustomQuery.objects.get(id=custom_query_id)
     except CustomQuery.DoesNotExist:
         error_msg = f"Custom query {custom_query_id} not found"
         logger.error(error_msg)
-        self.update_state(state="FAILURE", meta={"error": error_msg})
+        publish_state(self, state="FAILURE", meta={"error": error_msg})
         raise Ignore()
+
+    result_type = (custom_query.default_type or "custom").lower()
+
+    provider_lower = (provider or custom_query.provider or "shodan").lower()
+    if provider_lower not in ("shodan", "zoomeye"):
+        if demo:raise ValueError("Legacy Demo requires Shodan or ZoomEye; use normalized discovery for Netlas")
+        provider_lower = "shodan"
 
     # Track run metadata
     CustomQuery.objects.filter(id=custom_query_id).update(
         last_run_at=timezone.now(), last_status="running", last_error=""
     )
-
-    provider_lower = (provider or custom_query.provider or "shodan").lower()
-    if provider_lower not in ("shodan", "zoomeye"):
-        provider_lower = "shodan"
 
     active_probe_flag = custom_query.active_probe_default if active_probe is None else active_probe
 
@@ -823,9 +441,19 @@ def check_custom_query(self, custom_query_id, keyword=None, country=None, networ
     if not rendered_query:
         msg = "Rendered query is empty; check your template/parameters."
         CustomQuery.objects.filter(id=custom_query_id).update(last_status="failed", last_error=msg)
-        self.update_state(state="FAILURE", meta={"error": msg})
+        publish_state(self, state="FAILURE", meta={"error": msg})
         raise Ignore()
 
+    if demo:
+        try:
+            meta=_demo_query_result(provider_lower,rendered_query,config['config'],result_type)
+            CustomQuery.objects.filter(id=custom_query_id).update(last_status='partial' if meta['partial'] else 'success',last_error='')
+            publish_state(self,state='SUCCESS',meta=meta)
+        except Exception as exc:
+            message=redact(exc)
+            CustomQuery.objects.filter(id=custom_query_id).update(last_status='failed',last_error=message)
+            publish_state(self,state='FAILURE',meta={'demo':True,'error':message,'provider':provider_lower})
+        raise Ignore()
     try:
         page_num = int(page) if page else 1
     except ValueError:
@@ -836,6 +464,10 @@ def check_custom_query(self, custom_query_id, keyword=None, country=None, networ
         total_pages = 1
     total_pages = max(1, total_pages)
 
+    fetch_errors = []
+    collected = []
+    events_total = 0
+    completed_pages = 0
     try:
         if provider_lower == "zoomeye":
             client = get_zoomeye_client()
@@ -850,6 +482,7 @@ def check_custom_query(self, custom_query_id, keyword=None, country=None, networ
                 resp = client.search(rendered_query, page=pnum, pagesize=pagesize, sub_type=config['config'].get('ZOOMEYE_SUBTYPE', 'all'))
                 events_total = max(events_total, resp.get('total', 0))
                 collected.extend(resp.get('data', []) or [])
+                completed_pages += 1
             response = {"data": collected, "total": events_total if events_total else len(collected)}
         else:
             client = get_shodan_client()
@@ -859,20 +492,17 @@ def check_custom_query(self, custom_query_id, keyword=None, country=None, networ
                 resp = client.host_search(rendered_query, page=pnum)
                 events_total = max(events_total, resp.get('total', 0))
                 collected.extend(resp.get('matches', []) or [])
+                completed_pages += 1
             response = {"matches": collected, "total": events_total if events_total else len(collected)}
-    except (ZoomEyeClientError, ShodanClientError) as exc:
-        error_msg = f"{provider_lower.title()} search failed: {exc}"
-        CustomQuery.objects.filter(id=custom_query_id).update(last_status="failed", last_error=error_msg)
-        logger.error(error_msg)
-        # Return an empty success to avoid UI crashes, carrying the error message.
-        self.update_state(state="SUCCESS", meta={"type": result_type, "total": 0, "events": 0, "results": {}, "error": error_msg})
-        raise Ignore()
-    except Exception as exc:  # pragma: no cover
-        error_msg = f"Unexpected error during {provider_lower} search: {exc}"
-        CustomQuery.objects.filter(id=custom_query_id).update(last_status="failed", last_error=error_msg)
-        logger.exception(error_msg)
-        self.update_state(state="SUCCESS", meta={"type": result_type, "total": 0, "events": 0, "results": {}, "error": error_msg})
-        raise Ignore()
+    except Exception as exc:
+        error_msg = redact(f"{provider_lower.title()} search failed: {exc}")
+        if not completed_pages:
+            CustomQuery.objects.filter(id=custom_query_id).update(last_status="failed", last_error=error_msg)
+            publish_state(self, state="FAILURE", meta={"type": result_type, "total": 0, "events": 0, "results": {}, "error": error_msg})
+            raise Ignore()
+        fetch_errors.append(error_msg)
+        response = {'data' if provider_lower == 'zoomeye' else 'matches': collected,
+                    'total': events_total or len(collected)}
 
     if provider_lower == "zoomeye":
         raw_matches = response.get('data', []) or []
@@ -895,48 +525,20 @@ def check_custom_query(self, custom_query_id, keyword=None, country=None, networ
     progress_recorder = ProgressRecorder(self)
     results: Dict[int, Dict[str, Any]] = {}
 
-    handler_map = {
-        "gitlab": lambda idx, m: check_gitlab(idx, m, search, config),
-        "elastic": lambda idx, m: check_elastic(idx, m, search, keyword=keyword, config=config,
-                                                active_probe=active_probe_flag),
-        "angular": lambda idx, m: check_angular(idx, m, search, keyword=keyword, config=config),
-        "amazons3be": lambda idx, m: check_amazons3be(idx, m, search, keyword=keyword, config=config),
-        "dirs": lambda idx, m: check_dir(idx, m, search, keyword=keyword, config=config),
-        "jenkins": lambda idx, m: check_jenkins(idx, m, search, keyword=keyword, config=config),
-        "mongo": lambda idx, m: check_mongo(idx, m, search, keyword=keyword, config=config),
-        "rsync": lambda idx, m: check_rsync(idx, m, search, config=config),
-        "ftp": lambda idx, m: check_ftp(idx, m, search, keyword=keyword, config=config),
-        "sonarqube": lambda idx, m: check_sonarqube(idx, m, search, config=config),
-        "couchdb": lambda idx, m: check_couchdb(idx, m, search, config=config),
-        "kibana": lambda idx, m: check_kibana(idx, m, search, config=config),
-        "cassandra": lambda idx, m: check_cassandra(idx, m, search, config=config),
-        "rethink": lambda idx, m: check_rethink(idx, m, search, config=config),
-        "opensearch": lambda idx, m: check_opensearch(idx, m, search, keyword=keyword, config=config,
-                                                      active_probe=active_probe_flag),
-        "grafana": lambda idx, m: check_grafana(idx, m, search, config=config),
-        "prometheus": lambda idx, m: check_prometheus(idx, m, search, config=config),
-        "minio": lambda idx, m: check_minio(idx, m, search, config=config),
-        "swagger": lambda idx, m: check_swagger(idx, m, search, config=config),
-        "mongoexpress": lambda idx, m: check_mongoexpress(idx, m, search, config=config),
-        "keys": lambda idx, m: check_keys(idx, m, search, config=config),
-        "amazonbuckets": lambda idx, m: check_amazonbe(idx, m, search, config=config),
-        "etcd": lambda idx, m: check_etcd(idx, m, search, config=config, active_probe=active_probe_flag),
-        "consul": lambda idx, m: check_consul(idx, m, search, config=config, active_probe=active_probe_flag),
-        "rabbitmq": lambda idx, m: check_rabbitmq(idx, m, search, config=config, active_probe=active_probe_flag),
-        "solr": lambda idx, m: check_solr(idx, m, search, config=config, active_probe=active_probe_flag),
-        "gitea": lambda idx, m: check_gitea(idx, m, search, config=config, active_probe=active_probe_flag, product_hint="gitea"),
-        "gogs": lambda idx, m: check_gitea(idx, m, search, config=config, active_probe=active_probe_flag, product_hint="gogs"),
-        "azureblob": lambda idx, m: check_azureblob(idx, m, search, config=config, active_probe=active_probe_flag),
-        "gcsbucket": lambda idx, m: check_gcsbucket(idx, m, search, config=config, active_probe=active_probe_flag),
-    }
-
     default_total = total if total > 0 else 1
 
+    processing_errors = []
     for index, match in enumerate(matches):
         try:
-            handler = handler_map.get(result_type)
+            ip_addr, port = extract_ip_port(match)
+            if is_blacklisted(ip_addr, config):
+                results[index] = {}
+                progress_recorder.set_progress(index + 1, total=default_total)
+                continue
+            handler = discovery_handler(result_type)
             if handler:
-                payload = handler(index, match) or {}
+                payload = dispatch_discovery(result_type,index,match,search,config,
+                                             keyword=keyword,active_probe=active_probe_flag) or {}
             else:
                 ip_addr, port = extract_ip_port(match)
                 banner = get_http_html(match) or (match.get('data') if isinstance(match.get('data'), str) else "")
@@ -951,7 +553,8 @@ def check_custom_query(self, custom_query_id, keyword=None, country=None, networ
 
             results[index] = payload
         except Exception as exc:  # pragma: no cover - keep batch alive
-            logger.exception("Failed to process custom query result for IP %s", match.get('ip_str'))
+            processing_errors.append(redact(exc))
+            logger.error("Custom handler failed: %s", redact(exc))
             results[index] = {}
 
         progress_recorder.set_progress(index + 1, total=default_total)
@@ -963,1761 +566,44 @@ def check_custom_query(self, custom_query_id, keyword=None, country=None, networ
                 status = record_fingerprint(result_type, ip_addr, port)
                 entry["status"] = status
 
-    CustomQuery.objects.filter(id=custom_query_id).update(last_status="success", last_error="")
-    self.update_state(state="SUCCESS",
-                      meta={"type": result_type or 'custom', "total": total,
-                            'events': events, 'results': results, 'provider': provider_lower})
+    failed = bool(processing_errors) and len(processing_errors) == len(matches)
+    CustomQuery.objects.filter(id=custom_query_id).update(
+        last_status="failed" if failed else ("partial" if fetch_errors or processing_errors else "success"),
+        last_error='; '.join(fetch_errors + processing_errors)[:2000])
+    publish_state(self, state="FAILURE" if failed else "SUCCESS",
+                  meta={"type": result_type or 'custom', "total": total,
+                        'events': events, 'results': results, 'provider': provider_lower,
+                        'partial': bool(fetch_errors or processing_errors) and not failed, 'errors': fetch_errors + processing_errors,
+                        'completed_pages': completed_pages, 'requested_pages': total_pages,
+                        'error': 'All matches failed to process' if failed else ''})
     raise Ignore()
-
-
-def _safe_int(val, default=0):
-    try:
-        return int(val)
-    except Exception:
-        return default
-
-
-def _json_safe(value: Any) -> Any:
-    try:
-        return json.loads(json_util.dumps(value))
-    except Exception:
-        try:
-            json.dumps(value)
-            return value
-        except Exception:
-            return str(value)
-
-
-def _write_export_file(data: Any, fmt: str = "json") -> Dict[str, str]:
-    export_dir = Path("/tmp/leakscope_exports")
-    export_dir.mkdir(parents=True, exist_ok=True)
-    token = uuid4().hex
-    fmt = fmt.lower()
-    if fmt not in {"json", "csv"}:
-        fmt = "json"
-    filepath = export_dir / f"{token}.{fmt}"
-    if fmt == "json":
-        filepath.write_text(json.dumps(data, default=str))
-    else:
-        import csv
-        from io import StringIO
-        buf = StringIO()
-        if isinstance(data, list) and data and isinstance(data[0], dict):
-            writer = csv.DictWriter(buf, fieldnames=data[0].keys())
-            writer.writeheader()
-            for row in data:
-                writer.writerow({k: _json_safe(v) for k, v in row.items()})
-        else:
-            writer = csv.writer(buf)
-            writer.writerow(["data"])
-            if isinstance(data, list):
-                for row in data:
-                    writer.writerow([_json_safe(row)])
-            else:
-                writer.writerow([_json_safe(data)])
-        filepath.write_text(buf.getvalue())
-    return {"token": token, "path": str(filepath)}
-
-
-def _limit_max(value: Any, default: int = 1000, hard_max: int = 5000) -> int:
-    try:
-        iv = int(value)
-    except Exception:
-        iv = default
-    return max(1, min(iv, hard_max))
-
-
-def _http_base(ip: str, port: Any, scheme: str = "http") -> str:
-    port_int = _safe_int(port, None)
-    default_port = 443 if scheme == "https" else 80
-    if port_int and port_int != default_port:
-        return f"{scheme}://{ip}:{port_int}"
-    return f"{scheme}://{ip}"
-
-
-def _preview_elastic(ip: str, port: Any) -> Dict[str, Any]:
-    base = _http_base(ip, port, scheme="http")
-    summary = ""
-    items: List[Dict[str, Any]] = []
-    try:
-        health = requests.get(f"{base}/_cluster/health", timeout=6)
-        if health.status_code in (401, 403):
-            return {"summary": "auth required", "items": []}
-        if health.ok:
-            hp = health.json()
-            summary = f"cluster={hp.get('cluster_name')} status={hp.get('status')}"
-        else:
-            summary = f"HTTP {health.status_code}"
-    except Exception:
-        summary = ""
-    try:
-        resp = requests.get(f"{base}/_cat/indices?format=json&bytes=b", timeout=8)
-        if resp.status_code in (401, 403):
-            return {"summary": "auth required", "items": []}
-        if resp.ok:
-            for idx in resp.json()[:10]:
-                items.append({
-                    "index": idx.get("index") or idx.get("id"),
-                    "docs": idx.get("docs.count") or idx.get("docs"),
-                    "store_bytes": idx.get("store.size") or idx.get("store.size_in_bytes") or idx.get("pri.store.size")
-                })
-        elif not items:
-            summary = summary or f"HTTP {resp.status_code}"
-    except Exception:
-        pass
-    # sample docs from first index
-    for idx in items[:1]:
-        name = idx.get("index")
-        if not name:
-            continue
-        try:
-            doc_resp = requests.get(f"{base}/{name}/_search?size=10", timeout=6)
-            if doc_resp.ok:
-                docs = doc_resp.json().get("hits", {}).get("hits", [])
-                idx["sample_docs"] = [d.get("_source") for d in docs if isinstance(d, dict)]
-        except Exception:
-            continue
-    return {"summary": summary or "Elastic/OpenSearch preview", "items": items}
-
-
-def _preview_dirs(url: str) -> Dict[str, Any]:
-    summary = ""
-    items = []
-    try:
-        resp = requests.get(url, timeout=6)
-        if resp.status_code in (401, 403):
-            return {"summary": "auth required", "items": []}
-        if resp.ok:
-            soup = BeautifulSoup(resp.text, features="html.parser")
-            for a in soup.find_all("a", href=True)[:10]:
-                text = a.get_text().strip()
-                href = a.get("href", "")
-                if text and text not in {"Name", "Last modified", "Size", "Description", "Parent Directory"}:
-                    items.append({"name": text, "href": href})
-            summary = f"Found {len(items)} entries"
-        else:
-            summary = f"HTTP {resp.status_code}"
-    except Exception:
-        summary = "Failed to fetch directory listing"
-    return {"summary": summary, "items": items}
-
-
-def _preview_nexus(url: str) -> Dict[str, Any]:
-    summary = ""
-    items: List[Dict[str, Any]] = []
-    try:
-        r = requests.get(f"{url}/service/rest/v1/repositories", timeout=8)
-        if r.status_code in (401, 403):
-            return {"summary": "auth required", "items": []}
-        if r.ok:
-            repos = r.json()
-            summary = f"{len(repos)} repos"
-            for repo in repos[:50]:
-                items.append({"repo": repo.get("name"), "format": repo.get("format"), "type": repo.get("type")})
-        else:
-            summary = f"HTTP {r.status_code}"
-    except Exception:
-        summary = "Failed to list repos"
-    return {"summary": summary or "Nexus preview", "items": items}
-
-
-def _preview_artifactory(url: str) -> Dict[str, Any]:
-    summary = ""
-    items: List[Dict[str, Any]] = []
-    base = url[:-1] if url.endswith("/") else url
-    try:
-        r = requests.get(f"{base}/api/repositories", timeout=8)
-        if r.status_code in (401, 403):
-            return {"summary": "auth required", "items": []}
-        if r.ok:
-            repos = r.json()
-            summary = f"{len(repos)} repos"
-            for repo in repos[:50]:
-                key = repo.get("key") or repo.get("repoKey") or repo.get("repo")
-                items.append({"repo": key, "type": repo.get("type"), "packageType": repo.get("packageType")})
-        else:
-            summary = f"HTTP {r.status_code}"
-    except Exception:
-        summary = "Failed to list repos"
-    return {"summary": summary or "Artifactory preview", "items": items}
-
-
-def _parse_link_next(header_val: str) -> Optional[str]:
-    if not header_val:
-        return None
-    for part in header_val.split(","):
-        if 'rel="next"' in part:
-            start = part.find("<")
-            end = part.find(">")
-            if start != -1 and end != -1 and end > start:
-                return part[start + 1:end]
-    return None
-
-
-def _preview_registry(url: str, repo_cap: int = 50, tag_cap: int = 20) -> Dict[str, Any]:
-    summary = ""
-    items: List[Dict[str, Any]] = []
-    base = url[:-1] if url.endswith("/") else url
-    try:
-        probe = requests.get(f"{base}/v2/", timeout=6)
-        if probe.status_code in (401, 403):
-            return {"summary": "auth required", "items": [], "auth_required": True}
-        if not probe.ok:
-            return {"summary": f"HTTP {probe.status_code}", "items": []}
-    except Exception:
-        return {"summary": "Probe failed", "items": []}
-
-    repos: List[str] = []
-    next_url = f"{base}/v2/_catalog?n={repo_cap}"
-    while next_url and len(repos) < repo_cap:
-        try:
-            resp = requests.get(next_url, timeout=8)
-            if resp.status_code in (401, 403):
-                return {"summary": "auth required", "items": [], "auth_required": True}
-            if not resp.ok:
-                break
-            payload = resp.json()
-            repos.extend(payload.get("repositories", []))
-            link = resp.headers.get("Link")
-            nxt = _parse_link_next(link) if link else None
-            if nxt:
-                next_url = nxt if nxt.startswith("http") else f"{base}{nxt}"
-            else:
-                next_url = None
-        except Exception:
-            break
-
-    repos = repos[:repo_cap]
-    for repo in repos[:10]:
-        try:
-            tag_resp = requests.get(f"{base}/v2/{repo}/tags/list?n={tag_cap}", timeout=8)
-            if tag_resp.status_code in (401, 403):
-                items.append({"repo": repo, "error": "auth required"})
-                continue
-            if tag_resp.ok:
-                payload = tag_resp.json()
-                tags = payload.get("tags") or []
-                items.append({"repo": repo, "tags": (tags or [])[:tag_cap]})
-            else:
-                items.append({"repo": repo, "error": f"HTTP {tag_resp.status_code}"})
-        except Exception:
-            items.append({"repo": repo, "error": "tag listing failed"})
-
-    summary = f"Repos listed: {len(repos)}"
-    return {"summary": summary, "items": items, "repo_count": len(repos)}
-
-def _preview_gitlab(url: str) -> Dict[str, Any]:
-    base = url.rstrip("/")
-    targets = [base, f"{base}/users/sign_in"]
-    status = []
-    try:
-        for t in targets:
-            resp = requests.get(t, timeout=6)
-            status.append({"url": t, "code": resp.status_code, "title": (BeautifulSoup(resp.text, "html.parser").title.string or "").strip() if resp.text else ""})
-        return {"summary": f"Probed {len(status)} endpoints", "items": status}
-    except Exception:
-        return {"summary": "Probe failed", "items": []}
-
-def _preview_sonarqube(url: str) -> Dict[str, Any]:
-    base = url.rstrip("/")
-    summary = ""
-    items = []
-    try:
-        r = requests.get(f"{base}/api/system/status", timeout=6)
-        if r.ok:
-            payload = r.json()
-            summary = f"Status={payload.get('status')}"
-            items.append(payload)
-    except Exception:
-        summary = summary or "Status probe failed"
-    try:
-        v = requests.get(f"{base}/api/server/version", timeout=4)
-        if v.ok:
-            items.append({"version": v.text.strip()})
-    except Exception:
-        pass
-    return {"summary": summary or "SonarQube preview", "items": items}
-
-def _preview_kibana(url: str) -> Dict[str, Any]:
-    try:
-        r = requests.get(url, timeout=6)
-        title = ""
-        if r.text:
-            soup = BeautifulSoup(r.text, "html.parser")
-            title = (soup.title.string or "").strip() if soup.title else ""
-        return {"summary": f"HTTP {r.status_code}", "items": [{"title": title}]}
-    except Exception:
-        return {"summary": "Probe failed", "items": []}
-
-def _preview_grafana(url: str) -> Dict[str, Any]:
-    base = url.rstrip("/")
-    try:
-        r = requests.get(f"{base}/api/health", timeout=6)
-        if r.ok:
-            payload = r.json()
-            return {"summary": f"status={payload.get('status')}", "items": [payload]}
-        return {"summary": f"HTTP {r.status_code}", "items": []}
-    except Exception:
-        return {"summary": "Probe failed", "items": []}
-
-def _preview_prometheus(url: str) -> Dict[str, Any]:
-    base = url.rstrip("/")
-    items = []
-    summary = ""
-    try:
-        t = requests.get(f"{base}/api/v1/targets", timeout=6)
-        if t.ok:
-            data = t.json().get("data", {})
-            items.append({"active": len(data.get("activeTargets", [])), "dropped": len(data.get("droppedTargets", []))})
-            summary = "Targets fetched"
-    except Exception:
-        summary = summary or "Targets unavailable"
-    try:
-        r = requests.get(f"{base}/api/v1/status/runtimeinfo", timeout=6)
-        if r.ok:
-            items.append({"runtime": r.json().get("data", {})})
-    except Exception:
-        pass
-    return {"summary": summary or "Prometheus preview", "items": items}
-
-def _preview_swagger(url: str) -> Dict[str, Any]:
-    try:
-        r = requests.get(url, timeout=6)
-        title = ""
-        if r.text:
-            soup = BeautifulSoup(r.text, "html.parser")
-            title = (soup.title.string or "").strip() if soup.title else ""
-        return {"summary": f"HTTP {r.status_code}", "items": [{"title": title}]}
-    except Exception:
-        return {"summary": "Probe failed", "items": []}
-
-def _preview_minio(url: str) -> Dict[str, Any]:
-    items = []
-    summary = ""
-    try:
-        r = requests.get(url, timeout=6)
-        if r.text:
-            soup = BeautifulSoup(r.text, "html.parser")
-            for tag in soup.find_all("a", href=True)[:10]:
-                text = tag.get_text().strip() or tag.get("href", "")
-                if text:
-                    items.append({"bucket": text})
-            summary = f"Buckets: {len(items)}"
-        else:
-            summary = f"HTTP {r.status_code}"
-    except Exception:
-        summary = "Probe failed"
-    return {"summary": summary, "items": items}
-
-def _preview_angular(url: str) -> Dict[str, Any]:
-    try:
-        r = requests.get(url, timeout=6)
-        scripts = []
-        title = ""
-        if r.text:
-            soup = BeautifulSoup(r.text, "html.parser")
-            for s in soup.find_all("script", src=True):
-                if "main" in s.get("src", "") or "runtime" in s.get("src", ""):
-                    scripts.append(s.get("src"))
-            if soup.title:
-                title = (soup.title.string or "").strip()
-        return {"summary": f"Scripts: {len(scripts)}", "items": [{"scripts": scripts, "title": title}]}
-    except Exception:
-        return {"summary": "Probe failed", "items": []}
-
-def _preview_cassandra(ip: str, port: Any) -> Dict[str, Any]:
-    """
-    Light-weight, no-auth preview for Cassandra.
-    Uses cassandra-driver for unauthenticated system.local + schema peek if open; otherwise falls back to TCP probes.
-    """
-    items: List[Dict[str, Any]] = []
-    notes: List[str] = []
-
-    thrift_port = _safe_int(port, 9160)
-    cql_port = _safe_int(port, 9042)
-    summary_parts = []
-
-    # Try native driver first (no auth). Prefer 9042, then provided port if different.
-    attempted_ports = []
-    for cport in [9042, cql_port]:
-        if cport in attempted_ports:
-            continue
-        attempted_ports.append(cport)
-        try:
-            profile = ExecutionProfile(
-                load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="dc1", used_hosts_per_remote_dc=0),
-                request_timeout=3,
-            )
-            cluster = Cluster(
-                contact_points=[ip],
-                port=cport,
-                connect_timeout=3,
-                protocol_version=4,
-                execution_profiles={EXEC_PROFILE_DEFAULT: profile},
-                allow_beta_protocol_version=False,
-            )
-            session = cluster.connect()
-            try:
-                row = session.execute("SELECT cluster_name, data_center, rack, release_version, cql_version FROM system.local").one()
-                if row:
-                    items.append({"cluster": row.cluster_name, "dc": row.data_center, "rack": row.rack,
-                                  "release_version": row.release_version, "cql_version": row.cql_version, "port": cport})
-                    summary_parts.append("CQL open (no auth)")
-            except Exception as exc:
-                notes.append(f"system.local query failed: {exc.__class__.__name__}")
-            try:
-                ks_rows = session.execute("SELECT keyspace_name FROM system_schema.keyspaces")
-                ks_list = [r.keyspace_name for r in ks_rows][:20]
-                if ks_list:
-                    items.append({"keyspaces": ks_list})
-            except Exception as exc:
-                notes.append(f"Keyspace list failed: {exc.__class__.__name__}")
-            try:
-                tbl_rows = session.execute("SELECT keyspace_name, table_name FROM system_schema.tables")
-                tbls: Dict[str, List[str]] = {}
-                for r in tbl_rows:
-                    tbls.setdefault(r.keyspace_name, [])
-                    if len(tbls[r.keyspace_name]) < 20:
-                        tbls[r.keyspace_name].append(r.table_name)
-                if tbls:
-                    items.append({"tables": tbls})
-            except Exception:
-                pass
-            cluster.shutdown()
-            break
-        except NoHostAvailable:
-            notes.append(f"CQL driver connect failed (port {cport}): NoHostAvailable")
-        except Exception as exc:
-            notes.append(f"CQL driver connect failed (port {cport}): {exc.__class__.__name__}")
-
-    # Check legacy Thrift port
-    try:
-        with socket.create_connection((ip, thrift_port), timeout=4):
-            items.append({"tcp": "ok", "port": thrift_port, "protocol": "thrift"})
-    except Exception as exc:
-        notes.append(f"Thrift {thrift_port} unreachable: {exc.__class__.__name__}")
-
-    # Check CQL port(s) and send OPTIONS to get a fingerprint
-    for cport in attempted_ports:
-        try:
-            with socket.create_connection((ip, cport), timeout=4) as cql:
-                items.append({"tcp": "ok", "port": cport, "protocol": "cql"})
-                try:
-                    # Native protocol v4 OPTIONS (opcode 0x05) with empty body
-                    import struct
-                    header = struct.pack(">bbbbI", 0x04, 0x00, 0x01, 0x05, 0)
-                    cql.sendall(header)
-                    resp = cql.recv(2048)
-                    if resp:
-                        items.append({"cql_options_hex": resp.hex()[:200], "port": cport})
-                except Exception as exc:  # pragma: no cover
-                    notes.append(f"CQL OPTIONS failed on {cport}: {exc.__class__.__name__}")
-        except Exception as exc:
-            notes.append(f"CQL {cport} unreachable: {exc.__class__.__name__}")
-
-    if any(i.get("protocol") == "cql" for i in items):
-        summary_parts.append("CQL port reachable")
-    if any(i.get("protocol") == "thrift" for i in items):
-        summary_parts.append("Thrift port reachable")
-    if not summary_parts:
-        summary_parts.append("Connection failed")
-    summary = "; ".join(summary_parts)
-    if notes:
-        items.append({"notes": "; ".join(notes[:3])})
-
-    return {"summary": summary, "items": items[:5]}
-
-def _preview_rethink(ip: str, port: Any) -> Dict[str, Any]:
-    try:
-        with socket.create_connection((ip, _safe_int(port, 28015)), timeout=5):
-            return {"summary": "TCP connection ok", "items": [{"ip": ip, "port": port}]}
-    except Exception:
-        return {"summary": "Connection failed", "items": []}
-
-def _preview_keys(obj) -> Dict[str, Any]:
-    title = getattr(obj, "title", "")
-    return {"summary": "Stored key metadata", "items": [{"ip": obj.ip, "port": obj.port, "title": title}]}
-
-def _preview_amazonbe(obj) -> Dict[str, Any]:
-    buckets = getattr(obj, "buckets", []) or []
-    if isinstance(buckets, str):
-        buckets_list = buckets.split(",")
-    else:
-        buckets_list = list(buckets)
-    buckets_list = [b.strip() for b in buckets_list if b]
-    return {"summary": f"Buckets: {len(buckets_list)}", "items": [{"bucket": b} for b in buckets_list[:20]]}
-
-def _preview_javascript(obj) -> Dict[str, Any]:
-    secrets = getattr(obj, "secrets", "") or ""
-    context = getattr(obj, "context", "") or ""
-    secrets_list = [s.strip() for s in secrets.split(",") if s.strip()] if isinstance(secrets, str) else list(secrets)
-    ctx_list = [c.strip() for c in context.split(",") if c.strip()] if isinstance(context, str) else list(context)
-    return {"summary": f"Secrets: {len(secrets_list)}", "items": [{"secret": s, "context": ctx_list[idx] if idx < len(ctx_list) else ""} for idx, s in enumerate(secrets_list[:20])]}
-
-def _preview_github(obj) -> Dict[str, Any]:
-    secrets = getattr(obj, "secret", "") or ""
-    paths = getattr(obj, "path", "") or ""
-    commits = getattr(obj, "commit", "") or ""
-    secrets_list = list(secrets) if isinstance(secrets, list) else [s.strip() for s in str(secrets).split(",") if s.strip()]
-    paths_list = list(paths) if isinstance(paths, list) else [p.strip() for p in str(paths).split(",") if p.strip()]
-    items = []
-    for idx, sec in enumerate(secrets_list[:20]):
-        items.append({"secret": sec, "path": paths_list[idx] if idx < len(paths_list) else "", "commit": commits})
-    return {"summary": f"Secrets: {len(secrets_list)}", "items": items}
-
-
-def _preview_jenkins(url: str) -> Dict[str, Any]:
-    summary = ""
-    items = []
-    try:
-        api_url = url.rstrip("/") + "/api/json"
-        resp = requests.get(api_url, timeout=6)
-        if resp.ok:
-            data = resp.json()
-            jobs = data.get("jobs", [])
-            for job in jobs[:10]:
-                items.append({"name": job.get("name"), "color": job.get("color")})
-            summary = f"Jobs: {len(jobs)}"
-        else:
-            summary = f"HTTP {resp.status_code}"
-    except Exception:
-        summary = "Failed to fetch Jenkins API"
-    return {"summary": summary, "items": items}
-
-
-def _preview_ftp(ip: str, port: Any) -> Dict[str, Any]:
-    summary = ""
-    items = []
-    try:
-        ftp = ftplib.FTP()
-        ftp.connect(ip, _safe_int(port, 21), timeout=6)
-        ftp.login()  # anonymous
-        listing = ftp.nlst()
-        for entry in listing[:10]:
-            items.append({"path": entry})
-        summary = f"Entries: {len(listing)}"
-        try:
-            ftp.quit()
-        except Exception:
-            pass
-    except Exception:
-        summary = "FTP preview failed"
-    return {"summary": summary, "items": items}
-
-
-def _preview_couch(ip: str, port: Any) -> Dict[str, Any]:
-    summary = ""
-    items = []
-    try:
-        base = _http_base(ip, port, scheme="http")
-        resp = requests.get(f"{base}/_all_dbs", timeout=6)
-        if resp.ok:
-            dbs = resp.json()
-            for db in dbs[:10]:
-                items.append({"db": db})
-            # sample docs from first db
-            if dbs:
-                dbname = dbs[0]
-                doc_resp = requests.get(f"{base}/{dbname}/_all_docs?limit=10&include_docs=true", timeout=6)
-                if doc_resp.ok:
-                    rows = doc_resp.json().get("rows", [])
-                    items.append({"db": dbname, "sample_docs": [r.get("doc") for r in rows if isinstance(r, dict)]})
-            summary = f"Databases: {len(dbs)}"
-        else:
-            summary = f"HTTP {resp.status_code}"
-    except Exception:
-        summary = "Failed to fetch CouchDB databases"
-    return {"summary": summary, "items": items}
-
-
-def _preview_s3(bucket: str) -> Dict[str, Any]:
-    summary = ""
-    items = []
-    try:
-        url = f"https://{bucket}"
-        resp = requests.get(url, timeout=6)
-        if resp.ok and "ListBucketResult" in resp.text:
-            parser = jxmlease.Parser()
-            root = parser(resp.text)
-            contents = root.get('ListBucketResult', {}).get('Contents', [])
-            if isinstance(contents, dict):
-                contents = [contents]
-            for item in contents[:10]:
-                if isinstance(item, dict):
-                    key_val = item.get('Key', '')
-                    size_val = item.get('Size', '')
-                    head_size = size_val
-                    try:
-                        head_resp = requests.head(f"{url}/{key_val}", timeout=5)
-                        if head_resp.ok:
-                            head_size = head_resp.headers.get("Content-Length", head_size)
-                            content_type = head_resp.headers.get("Content-Type", "")
-                        else:
-                            content_type = ""
-                    except Exception:
-                        content_type = ""
-                    items.append({"key": key_val, "size": head_size, "content_type": content_type})
-            summary = f"Objects: {len(items)}"
-        else:
-            summary = f"HTTP {resp.status_code if 'resp' in locals() else ''}"
-    except Exception:
-        summary = "Failed to fetch bucket listing"
-    return {"summary": summary, "items": items}
-
-
-def _preview_mongo(ip: str, port: Any) -> Dict[str, Any]:
-    summary = ""
-    items = []
-    try:
-        client = MongoClient(host=ip, port=_safe_int(port, 27017), serverSelectionTimeoutMS=3000, connectTimeoutMS=3000)
-        dbs = client.list_database_names()
-        for db in dbs[:10]:
-            items.append({"db": db})
-        if dbs:
-            dbname = dbs[0]
-            coll_names = client[dbname].list_collection_names()
-            if coll_names:
-                coll = client[dbname][coll_names[0]]
-                docs = list(coll.find({}, limit=10))
-                items.append({"db": dbname, "collection": coll_names[0], "sample_docs": _json_safe(docs)})
-        summary = f"Databases: {len(dbs)}"
-    except Exception:
-        summary = "Mongo preview failed"
-    return {"summary": summary, "items": items}
-
-
-def _preview_rsync(ip: str, port: Any) -> Dict[str, Any]:
-    summary = ""
-    items = []
-    try:
-        sock = socket.create_connection((ip, _safe_int(port, 873)), timeout=5)
-        sock.sendall(b"@RSYNCD: 31.0\n")
-        data = sock.recv(4096).decode(errors="ignore")
-        if "RSYNCD" not in data:
-            summary = "Not an rsync server"
-        else:
-            sock.sendall(b"#list\n")
-            mod_data = sock.recv(8192).decode(errors="ignore")
-            for line in mod_data.splitlines():
-                if line.startswith("@RSYNCD") or line.strip() == "" or line.startswith("#"):
-                    continue
-                parts = line.split("\t", 1)
-                items.append({"module": parts[0], "desc": parts[1] if len(parts) > 1 else ""})
-            items = items[:10]
-            summary = f"Modules: {len(items)}"
-        sock.close()
-    except Exception:
-        summary = "Rsync preview failed"
-    return {"summary": summary, "items": items}
-
-
-def _preview_etcd(ip: str, port: Any) -> Dict[str, Any]:
-    summary = ""
-    items: List[Dict[str, Any]] = []
-    auth_required = False
-    for scheme in ("http", "https"):
-        base = _http_base(ip, port, scheme=scheme)
-        try:
-            ver = requests.get(f"{base}/version", timeout=4, verify=False)
-            if ver.status_code in (401, 403):
-                auth_required = True
-                continue
-            if ver.ok and isinstance(ver.json(), dict):
-                summary = f"version={ver.json().get('etcdserver') or ver.json().get('etcdcluster')}"
-            health = requests.get(f"{base}/health", timeout=4, verify=False)
-            if health.status_code in (401, 403):
-                auth_required = True
-            elif health.ok:
-                summary = summary or health.text
-            kv = requests.get(f"{base}/v2/keys/?recursive=true&sorted=true&limit=10", timeout=5, verify=False)
-            if kv.status_code == 404:
-                payload = {"key": "", "range_end": "", "limit": 10}
-                v3 = requests.post(f"{base}/v3/kv/range", json=payload, timeout=5, verify=False)
-                if v3.ok:
-                    try:
-                        for kvs in v3.json().get("kvs", []) or []:
-                            k = kvs.get("key")
-                            if k:
-                                items.append({"key": base64.b64decode(k).decode(errors="ignore")})
-                    except Exception:
-                        pass
-            elif kv.status_code in (401, 403):
-                auth_required = True
-            elif kv.ok:
-                try:
-                    data = kv.json()
-                    def _collect(node):
-                        if isinstance(node, dict):
-                            key = node.get("key")
-                            if key:
-                                items.append({"key": key})
-                            for child in node.get("nodes", []) or []:
-                                _collect(child)
-                    _collect(data.get("node", {}))
-                except Exception:
-                    pass
-            break
-        except Exception:
-            continue
-    if auth_required and not items:
-        summary = "auth required"
-    return {"summary": summary or ("keys: %s" % len(items)), "items": items[:10]}
-
-
-def _preview_consul(ip: str, port: Any) -> Dict[str, Any]:
-    summary = ""
-    items: List[Dict[str, Any]] = []
-    auth_required = False
-    for scheme in ("http", "https"):
-        base = _http_base(ip, port, scheme=scheme)
-        try:
-            dcs = requests.get(f"{base}/v1/catalog/datacenters", timeout=4, verify=False)
-            if dcs.status_code in (401, 403):
-                auth_required = True
-                continue
-            if dcs.ok and isinstance(dcs.json(), list):
-                for dc in dcs.json()[:10]:
-                    items.append({"datacenter": dc})
-            svcs = requests.get(f"{base}/v1/catalog/services", timeout=4, verify=False)
-            if svcs.status_code in (401, 403):
-                auth_required = True
-            elif svcs.ok and isinstance(svcs.json(), dict):
-                for svc in list(svcs.json().keys())[:10]:
-                    items.append({"service": svc})
-            kv = requests.get(f"{base}/v1/kv/?keys&limit=10", timeout=4, verify=False)
-            if kv.status_code in (401, 403):
-                auth_required = True
-            elif kv.ok and isinstance(kv.json(), list):
-                for k in kv.json()[:10]:
-                    items.append({"key": k})
-            break
-        except Exception:
-            continue
-    if auth_required and not items:
-        summary = "auth required"
-    return {"summary": summary or ("items: %s" % len(items)), "items": items[:15]}
-
-
-def _preview_rabbitmq(ip: str, port: Any) -> Dict[str, Any]:
-    summary = ""
-    items: List[Dict[str, Any]] = []
-    auth_required = False
-    for scheme in ("http", "https"):
-        base = _http_base(ip, port, scheme=scheme)
-        try:
-            ov = requests.get(f"{base}/api/overview", timeout=4, verify=False)
-            if ov.status_code in (401, 403):
-                auth_required = True
-                continue
-            if ov.ok and isinstance(ov.json(), dict):
-                summary = f"version={ov.json().get('rabbitmq_version','')}"
-            vhosts = requests.get(f"{base}/api/vhosts", timeout=4, verify=False)
-            if vhosts.status_code in (401, 403):
-                auth_required = True
-            elif vhosts.ok and isinstance(vhosts.json(), list):
-                for vh in vhosts.json()[:10]:
-                    if isinstance(vh, dict) and vh.get("name"):
-                        items.append({"vhost": vh.get("name")})
-                    elif isinstance(vh, str):
-                        items.append({"vhost": vh})
-            queues = requests.get(f"{base}/api/queues", timeout=5, verify=False)
-            if queues.status_code in (401, 403):
-                auth_required = True
-            elif queues.ok and isinstance(queues.json(), list):
-                for q in queues.json()[:10]:
-                    if isinstance(q, dict) and q.get("name"):
-                        items.append({"queue": q.get("name"), "vhost": q.get("vhost")})
-            break
-        except Exception:
-            continue
-    if auth_required and not items:
-        summary = "auth required"
-    return {"summary": summary or ("items: %s" % len(items)), "items": items[:15]}
-
-
-def _preview_solr(ip: str, port: Any) -> Dict[str, Any]:
-    summary = ""
-    items: List[Dict[str, Any]] = []
-    auth_required = False
-    for scheme in ("http", "https"):
-        base = _http_base(ip, port, scheme=scheme)
-        try:
-            cores_resp = requests.get(f"{base}/solr/admin/cores?action=STATUS&wt=json", timeout=6, verify=False)
-            if cores_resp.status_code in (401, 403):
-                auth_required = True
-                continue
-            if cores_resp.ok and isinstance(cores_resp.json(), dict):
-                status = cores_resp.json().get("status", {})
-                if isinstance(status, dict):
-                    items = [{"core": name} for name in list(status.keys())[:15]]
-                version = cores_resp.headers.get("X-Solr-Version", "") or ""
-                summary = summary or (f"version={version}" if version else "")
-                break
-        except Exception:
-            continue
-    if auth_required and not items:
-        summary = "auth required"
-    return {"summary": summary or ("cores: %s" % len(items)), "items": items[:15]}
-
-
-def _preview_gitea(ip: str, port: Any) -> Dict[str, Any]:
-    summary = ""
-    items: List[Dict[str, Any]] = []
-    auth_required = False
-    for scheme in ("http", "https"):
-        base = _http_base(ip, port, scheme=scheme)
-        try:
-            resp = requests.get(f"{base}/api/v1/repos/search?limit=15", timeout=6, verify=False)
-            if resp.status_code in (401, 403):
-                auth_required = True
-                continue
-            if resp.ok and isinstance(resp.json(), dict):
-                data = resp.json().get("data", []) or resp.json().get("repos", [])
-                for r in data[:15]:
-                    if isinstance(r, dict) and r.get("full_name"):
-                        items.append({"repo": r.get("full_name")})
-            break
-        except Exception:
-            continue
-    if auth_required and not items:
-        summary = "auth required"
-    return {"summary": summary or ("repos: %s" % len(items)), "items": items[:15]}
-
-
-def _preview_azureblob(ip: str, port: Any) -> Dict[str, Any]:
-    summary = ""
-    items: List[Dict[str, Any]] = []
-    auth_required = False
-    base = _http_base(ip, port, scheme="https")
-    try:
-        resp = requests.get(f"{base}/?comp=list&maxresults=15", timeout=6, verify=False)
-        if resp.status_code in (401, 403):
-            auth_required = True
-        elif resp.ok and "EnumerationResults" in resp.text:
-            try:
-                parsed = jxmlease.Parser()(resp.text)
-                conts = parsed.get("EnumerationResults", {}).get("Containers", {}).get("Container", [])
-                if isinstance(conts, dict):
-                    conts = [conts]
-                for c in conts[:15]:
-                    if isinstance(c, dict) and c.get("Name"):
-                        items.append({"container": c.get("Name")})
-            except Exception:
-                pass
-    except Exception:
-        pass
-    if auth_required and not items:
-        summary = "auth required"
-    return {"summary": summary or ("containers: %s" % len(items)), "items": items[:15]}
-
-
-def _preview_gcsbucket(ip: str, port: Any) -> Dict[str, Any]:
-    summary = ""
-    items: List[Dict[str, Any]] = []
-    auth_required = False
-    base = _http_base(ip, port, scheme="https")
-    try:
-        resp = requests.get(f"{base}/", timeout=6, verify=False)
-        if resp.status_code in (401, 403):
-            auth_required = True
-        elif resp.ok and "ListBucketResult" in resp.text:
-            try:
-                parsed = jxmlease.Parser()(resp.text)
-                contents = parsed.get("ListBucketResult", {}).get("Contents", [])
-                if isinstance(contents, dict):
-                    contents = [contents]
-                for c in contents[:15]:
-                    if isinstance(c, dict) and c.get("Key"):
-                        items.append({"object": c.get("Key")})
-            except Exception:
-                pass
-    except Exception:
-        pass
-    if auth_required and not items:
-        summary = "auth required"
-    return {"summary": summary or ("objects: %s" % len(items)), "items": items[:15]}
 
 
 @shared_task(bind=True)
 def run_preview(self, type=None, target_id=None, active_probe=False):
     if not active_probe:
-        self.update_state(state="FAILURE", meta={"error": "Active probing required for preview"})
+        publish_state(self, state="FAILURE", meta={"error": "Active probing required for preview"})
         raise Ignore()
 
-    type_lower = (type or "").lower()
-    model_map = {
-        "elastic": Elastic,
-        "opensearch": OpenSearch,
-        "dirs": Dirs,
-        "jenkins": Jenkins,
-        "ftp": Ftp,
-        "couchdb": Couchdb,
-        "amazons3be": Amazons3be,
-        "amazonbuckets": AmazonBuckets,
-        "mongo": Mongo,
-        "mongoexpress": MongoExpress,
-        "rsync": Rsync,
-        "nexus": Nexus,
-        "artifactory": Artifactory,
-        "registry": Registry,
-        "harbor": Registry,
-        "dockerapi": Registry,
-        "gitlab": Gitlab,
-        "sonarqube": Sonarqube,
-        "kibana": Kibana,
-        "cassandra": Cassandra,
-        "rethink": Rethink,
-        "grafana": Grafana,
-        "prometheus": Prometheus,
-        "minio": Minio,
-        "swagger": Swagger,
-        "angular": Angular,
-        "keys": Keys,
-        "amazonbe": Amazonbe,
-        "javascript": Javascript,
-        "github": Github,
-        "etcd": Etcd,
-        "consul": ConsulKV,
-        "rabbitmq": Rabbitmq,
-        "solr": Solr,
-        "gitea": Gitea,
-        "gogs": Gogs,
-        "azureblob": AzureBlob,
-        "gcsbucket": GcsBucket,
-    }
-    Model = model_map.get(type_lower)
+    type_lower = canonical_type(type)
+    Model = model_for_type(type_lower)
     if not Model:
-        self.update_state(state="FAILURE", meta={"error": f"Preview not implemented for {type_lower}"})
+        publish_state(self, state="FAILURE", meta={"error": f"Preview not implemented for {type_lower}"})
         raise Ignore()
 
     try:
         obj = Model.objects.get(id=target_id)
     except Model.DoesNotExist:
-        self.update_state(state="FAILURE", meta={"error": "Target not found"})
+        publish_state(self, state="FAILURE", meta={"error": "Target not found"})
         raise Ignore()
 
-    result = {"summary": "Preview not implemented", "items": []}
-
-    if type_lower in ("elastic", "opensearch"):
-        result = _preview_elastic(obj.ip, obj.port)
-    elif type_lower == "dirs":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_dirs(url)
-    elif type_lower == "jenkins":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_jenkins(url)
-    elif type_lower == "ftp":
-        result = _preview_ftp(obj.ip, obj.port)
-    elif type_lower == "couchdb":
-        result = _preview_couch(obj.ip, obj.port)
-    elif type_lower in ("mongo", "mongoexpress"):
-        result = _preview_mongo(obj.ip, obj.port)
-    elif type_lower == "rsync":
-        result = _preview_rsync(obj.ip, obj.port)
-    elif type_lower == "nexus":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_nexus(url)
-    elif type_lower == "artifactory":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_artifactory(url)
-    elif type_lower in ("registry", "harbor", "dockerapi"):
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_registry(url)
-    elif type_lower in ("amazons3be", "amazonbuckets"):
-        bucket = getattr(obj, "bucket", None)
-        if not bucket and hasattr(obj, "buckets"):
-            bucket = str(obj.buckets).split(",")[0].strip()
-        if bucket:
-            if not bucket.startswith("http"):
-                bucket = bucket if bucket.endswith(".amazonaws.com") else bucket
-                bucket = bucket if bucket.startswith("http") else f"{bucket}"
-            bucket_url = bucket if bucket.startswith("http") else f"https://{bucket}"
-            result = _preview_s3(bucket_url.replace("https://", "").replace("http://", ""))
-        else:
-            result = {"summary": "No bucket found", "items": []}
-    elif type_lower == "gitlab":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_gitlab(url)
-    elif type_lower == "sonarqube":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_sonarqube(url)
-    elif type_lower == "kibana":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_kibana(url)
-    elif type_lower == "grafana":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_grafana(url)
-    elif type_lower == "prometheus":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_prometheus(url)
-    elif type_lower == "swagger":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_swagger(url)
-    elif type_lower == "minio":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_minio(url)
-    elif type_lower == "angular":
-        url = getattr(obj, "url", None) or _http_base(obj.ip, obj.port)
-        result = _preview_angular(url)
-    elif type_lower == "cassandra":
-        result = _preview_cassandra(obj.ip, obj.port)
-    elif type_lower == "rethink":
-        result = _preview_rethink(obj.ip, obj.port)
-    elif type_lower == "keys":
-        result = _preview_keys(obj)
-    elif type_lower == "amazonbe":
-        result = _preview_amazonbe(obj)
-    elif type_lower == "javascript":
-        result = _preview_javascript(obj)
-    elif type_lower == "github":
-        result = _preview_github(obj)
-    elif type_lower == "etcd":
-        result = _preview_etcd(obj.ip, obj.port)
-    elif type_lower == "consul":
-        result = _preview_consul(obj.ip, obj.port)
-    elif type_lower == "rabbitmq":
-        result = _preview_rabbitmq(obj.ip, obj.port)
-    elif type_lower == "solr":
-        result = _preview_solr(obj.ip, obj.port)
-    elif type_lower == "gitea":
-        result = _preview_gitea(obj.ip, obj.port)
-    elif type_lower == "gogs":
-        result = _preview_gitea(obj.ip, obj.port)
-    elif type_lower == "azureblob":
-        result = _preview_azureblob(obj.ip, obj.port)
-    elif type_lower == "gcsbucket":
-        result = _preview_gcsbucket(obj.ip, obj.port)
-    elif type_lower == "etcd":
-        result = _preview_etcd(obj.ip, obj.port)
-    elif type_lower == "consul":
-        result = _preview_consul(obj.ip, obj.port)
-    elif type_lower == "rabbitmq":
-        result = _preview_rabbitmq(obj.ip, obj.port)
+    result = preview_for_type(type_lower,obj)
 
     safe_items = _json_safe(result.get("items", []))
     safe_summary = _json_safe(result.get("summary", ""))
-    self.update_state(state="SUCCESS", meta={"type": type_lower, "summary": safe_summary,
+    publish_state(self, state="SUCCESS", meta={"type": type_lower, "summary": safe_summary,
                                              "items": safe_items})
     raise Ignore()
-
-
-@shared_task(bind=True)
-def export_preview_data(self, type: str, target_id: Any, selection: Optional[Dict[str, Any]] = None,
-                        max_items: Any = 1000, fmt: str = "json", active_probe: bool = False):
-    type_lower = (type or "").lower()
-    if not active_probe:
-        self.update_state(state="SUCCESS", meta={"state": "SKIPPED", "requires_active": True})
-        raise Ignore()
-
-    selection = selection or {}
-    max_items = _limit_max(max_items)
-    sel_index = (selection.get("index") or selection.get("db") or "").strip()
-    sel_collection = (selection.get("collection") or "").strip()
-    sel_repo = (selection.get("repo") or "").strip()
-    sel_bucket = (selection.get("bucket") or "").strip()
-    sel_filter = (selection.get("filter") or "").strip()
-    sel_keyspace = (selection.get("keyspace") or "").strip()
-    sel_table = (selection.get("table") or "").strip()
-    sel_max_repos = selection.get("max_repos")
-    sel_max_tags = selection.get("max_tags")
-
-    def _clean_name(val: Any) -> str:
-        if not isinstance(val, str):
-            return str(val or "").strip()
-        return val.strip().strip("'\"/ ")
-
-    def _json_safe_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            # Ensure meta can be serialized; fall back to string conversion.
-            json.dumps(meta, default=str)
-            return meta
-        except Exception:
-            safe_meta = {}
-            for k, v in meta.items():
-                try:
-                    safe_meta[k] = json.loads(json.dumps(v, default=str))
-                except Exception:
-                    safe_meta[k] = str(v)
-            return safe_meta
-
-    model_map = {
-        "elastic": Elastic,
-        "opensearch": OpenSearch,
-        "dirs": Dirs,
-        "jenkins": Jenkins,
-        "ftp": Ftp,
-        "couchdb": Couchdb,
-        "amazons3be": Amazons3be,
-        "amazonbuckets": AmazonBuckets,
-        "mongo": Mongo,
-        "mongoexpress": MongoExpress,
-        "rsync": Rsync,
-        "registry": Registry,
-        "harbor": Registry,
-        "dockerapi": Registry,
-        "gitlab": Gitlab,
-        "sonarqube": Sonarqube,
-        "kibana": Kibana,
-        "cassandra": Cassandra,
-        "rethink": Rethink,
-        "grafana": Grafana,
-        "prometheus": Prometheus,
-        "minio": Minio,
-        "swagger": Swagger,
-        "angular": Angular,
-        "keys": Keys,
-        "amazonbe": Amazonbe,
-        "javascript": Javascript,
-        "github": Github,
-        "etcd": Etcd,
-        "consul": ConsulKV,
-        "rabbitmq": Rabbitmq,
-        "solr": Solr,
-        "gitea": Gitea,
-        "gogs": Gogs,
-        "azureblob": AzureBlob,
-        "gcsbucket": GcsBucket,
-    }
-    Model = model_map.get(type_lower)
-    if not Model:
-        self.update_state(state="FAILURE", meta={"error": f"Export not implemented for {type_lower}"})
-        raise Ignore()
-
-    try:
-        obj = Model.objects.get(id=target_id)
-    except Model.DoesNotExist:
-        self.update_state(state="FAILURE", meta={"error": "Target not found"})
-        raise Ignore()
-
-    try:
-        if type_lower in ("elastic", "opensearch"):
-            base = _http_base(obj.ip, obj.port, scheme="http")
-            target_index = _clean_name(sel_index)
-            indices = []
-            try:
-                resp = requests.get(f"{base}/_cat/indices?format=json&bytes=b", timeout=8)
-                if resp.ok:
-                    indices = resp.json()
-            except Exception:
-                pass
-            if not target_index and indices:
-                target_index = indices[0].get("index") or indices[0].get("id") or indices[0].get("index_name")
-            docs = []
-            if target_index:
-                try:
-                    sr = requests.get(f"{base}/{target_index}/_search?size={max_items}", timeout=10)
-                    if sr.ok:
-                        hits = sr.json().get("hits", {}).get("hits", [])
-                        for h in hits:
-                            docs.append(h.get("_source", h))
-                    else:
-                        docs = [{"error": f"HTTP {sr.status_code}"}]
-                except Exception as exc:
-                    docs = [{"error": str(exc)}]
-            else:
-                docs = [{"error": "index required"}]
-            export_payload = docs
-
-        elif type_lower in ("mongo", "mongoexpress"):
-            try:
-                client = MongoClient(f"mongodb://{obj.ip}:{obj.port}/", serverSelectionTimeoutMS=4000)
-                db_name = selection.get("db") or sel_index
-                coll_name = sel_collection
-                dbs = client.list_database_names()
-                db_name = db_name or (dbs[0] if dbs else None)
-                if not db_name:
-                    export_payload = [{"error": "no database found"}]
-                else:
-                    db = client[db_name]
-                    colls = db.list_collection_names()
-                    coll_name = coll_name or (colls[0] if colls else None)
-                    if coll_name:
-                        cursor = db[coll_name].find().limit(max_items)
-                        export_payload = [doc for doc in cursor]
-                    else:
-                        export_payload = [{"error": "no collection found"}]
-            except Exception as exc:
-                export_payload = [{"error": str(exc)}]
-
-        elif type_lower == "couchdb":
-            base = _http_base(obj.ip, obj.port, scheme="http")
-            db_name = selection.get("db") or sel_index
-            export_payload = []
-            try:
-                dbs = requests.get(f"{base}/_all_dbs", timeout=6).json()
-                db_name = db_name or (dbs[0] if dbs else None)
-                if db_name:
-                    r = requests.get(f"{base}/{db_name}/_all_docs?include_docs=true&limit={max_items}", timeout=10)
-                    if r.ok:
-                        rows = r.json().get("rows", [])
-                        export_payload = [row.get("doc") for row in rows if row.get("doc")]
-                    else:
-                        export_payload = [{"error": f"HTTP {r.status_code}"}]
-                else:
-                    export_payload = [{"error": "no db found"}]
-            except Exception as exc:
-                export_payload = [{"error": str(exc)}]
-
-        elif type_lower in ("amazons3be", "amazonbuckets"):
-            bucket = sel_bucket or getattr(obj, "bucket", None) or getattr(obj, "buckets", None)
-            if isinstance(bucket, list):
-                bucket = bucket[0] if bucket else None
-            export_payload = []
-            if bucket:
-                url = bucket if bucket.startswith("http") else f"https://{bucket}"
-                try:
-                    resp = requests.get(url, timeout=10)
-                    if resp.ok:
-                        export_payload = [{"bucket": bucket, "content": resp.text[:500000]}]
-                    else:
-                        export_payload = [{"bucket": bucket, "content": f"HTTP {resp.status_code}"}]
-                except Exception:
-                    export_payload = [{"bucket": bucket, "content": "Failed to fetch listing"}]
-        elif type_lower == "nexus":
-            base = getattr(obj, "url", "") or _http_base(obj.ip, obj.port, scheme="http")
-            export_payload = []
-            repos = []
-            try:
-                r = requests.get(f"{base}/service/rest/v1/repositories", timeout=8)
-                if r.status_code in (401, 403):
-                    raise Exception("auth required")
-                if r.ok:
-                    repos = r.json()
-            except Exception as exc:
-                export_payload = [{"error": str(exc)}]
-            selected_repo = sel_repo or selection.get("repo") or selection.get("index")
-            if repos and not selected_repo:
-                selected_repo = repos[0].get("name")
-            if selected_repo:
-                try:
-                    sr = requests.get(f"{base}/service/rest/v1/search?repository={selected_repo}&sort=version&direction=desc&max={max_items}", timeout=10)
-                    if sr.status_code in (401,403):
-                        export_payload = [{"error":"auth required"}]
-                    elif sr.ok:
-                        export_payload = sr.json().get("items", [])[:max_items]
-                except Exception:
-                    pass
-            if not export_payload and repos:
-                export_payload = repos[:max_items]
-
-        elif type_lower == "artifactory":
-            base = getattr(obj, "url", "") or _http_base(obj.ip, obj.port, scheme="http")
-            base = base[:-1] if base.endswith("/") else base
-            export_payload = []
-            repos = []
-            try:
-                r = requests.get(f"{base}/api/repositories", timeout=8)
-                if r.status_code in (401,403):
-                    raise Exception("auth required")
-                if r.ok:
-                    repos = r.json()
-            except Exception as exc:
-                export_payload = [{"error": str(exc)}]
-            selected_repo = sel_repo or selection.get("repo") or selection.get("index")
-            if repos and not selected_repo:
-                selected_repo = repos[0].get("key") or repos[0].get("repoKey") or repos[0].get("repo")
-            if selected_repo:
-                try:
-                    sr = requests.get(f"{base}/api/storage/{selected_repo}", timeout=10)
-                    if sr.status_code in (401,403):
-                        export_payload = [{"error":"auth required"}]
-                    elif sr.ok:
-                        data = sr.json()
-                        children = data.get("children", [])[:max_items]
-                        export_payload = [{"repo": selected_repo, "children": children}]
-                except Exception:
-                    pass
-            if not export_payload and repos:
-                export_payload = repos[:max_items]
-
-        elif type_lower == "registry":
-            base = getattr(obj, "url", "") or _http_base(obj.ip, obj.port, scheme="http")
-            base = base[:-1] if base.endswith("/") else base
-            repo_cap = _limit_max(sel_max_repos or selection.get("max_repos", max_items), default=200, hard_max=5000)
-            tag_cap = _limit_max(sel_max_tags or selection.get("max_tags", 50), default=50, hard_max=1000)
-            export_payload = []
-            try:
-                probe = requests.get(f"{base}/v2/", timeout=6)
-                if probe.status_code in (401, 403):
-                    export_payload = [{"error": "auth required"}]
-                elif not probe.ok:
-                    export_payload = [{"error": f"HTTP {probe.status_code}"}]
-                else:
-                    repos: List[str] = []
-                    next_url = f"{base}/v2/_catalog?n={repo_cap}"
-                    while next_url and len(repos) < repo_cap:
-                        resp = requests.get(next_url, timeout=8)
-                        if resp.status_code in (401, 403):
-                            export_payload = [{"error": "auth required"}]
-                            break
-                        if not resp.ok:
-                            export_payload = [{"error": f"HTTP {resp.status_code}"}]
-                            break
-                        payload = resp.json()
-                        repos.extend(payload.get("repositories", []))
-                        link = resp.headers.get("Link")
-                        nxt = _parse_link_next(link) if link else None
-                        if nxt:
-                            next_url = nxt if nxt.startswith("http") else f"{base}{nxt}"
-                        else:
-                            next_url = None
-
-                    repos = repos[:repo_cap]
-                    selected_repo = sel_repo or selection.get("repo") or selection.get("index")
-                    if selected_repo:
-                        if selected_repo not in repos and repos:
-                            repos = [selected_repo] + repos
-                        else:
-                            repos = [selected_repo]
-
-                    for repo in repos:
-                        try:
-                            t_resp = requests.get(f"{base}/v2/{repo}/tags/list?n={tag_cap}", timeout=8)
-                            if t_resp.status_code in (401, 403):
-                                export_payload.append({"repo": repo, "error": "auth required"})
-                            elif t_resp.ok:
-                                data = t_resp.json()
-                                tags = data.get("tags") or []
-                                export_payload.append({"repo": repo, "tags": (tags or [])[:tag_cap]})
-                            else:
-                                export_payload.append({"repo": repo, "error": f"HTTP {t_resp.status_code}"})
-                        except Exception:
-                            export_payload.append({"repo": repo, "error": "tag listing failed"})
-
-                    if not repos and not export_payload:
-                        export_payload = [{"message": "No repositories found"}]
-            except Exception as exc:
-                export_payload = [{"error": str(exc)}]
-        elif type_lower == "gitlab":
-            export_payload = [{"ip": obj.ip, "port": obj.port, "url": getattr(obj, "url", "")}]
-        elif type_lower == "sonarqube":
-            export_payload = [{"ip": obj.ip, "port": obj.port, "url": getattr(obj, "url", "")}]
-        elif type_lower == "kibana":
-            export_payload = [{"ip": obj.ip, "port": obj.port}]
-        elif type_lower == "grafana":
-            export_payload = [{"ip": obj.ip, "port": obj.port, "url": getattr(obj, "url", ""), "title": getattr(obj, "title", "")}]
-        elif type_lower == "prometheus":
-            export_payload = [{"ip": obj.ip, "port": obj.port, "url": getattr(obj, "url", ""), "title": getattr(obj, "title", "")}]
-        elif type_lower == "minio":
-            buckets = getattr(obj, "buckets", "") or ""
-            export_payload = [{"ip": obj.ip, "port": obj.port, "url": getattr(obj, "url", ""), "title": getattr(obj, "title", ""), "buckets": buckets}]
-        elif type_lower == "swagger":
-            export_payload = [{"ip": obj.ip, "port": obj.port, "url": getattr(obj, "url", ""), "title": getattr(obj, "title", "")}]
-        elif type_lower == "angular":
-            export_payload = [{"ip": obj.ip, "port": obj.port, "title": getattr(obj, "title", ""), "path": getattr(obj, "path", "")}]
-        elif type_lower == "keys":
-            export_payload = [{"ip": obj.ip, "port": obj.port, "title": getattr(obj, "title", "")}]
-        elif type_lower == "amazonbe":
-            buckets = getattr(obj, "buckets", "") or ""
-            export_payload = [{"ip": obj.ip, "port": obj.port, "buckets": buckets}]
-        elif type_lower == "dirs":
-            dirs = getattr(obj, "dirs", []) or []
-            if isinstance(dirs, str):
-                dirs = [d.strip() for d in dirs.split(",") if d.strip()]
-            flt = sel_filter or (selection.get("index") or "").strip()
-            if flt:
-                dirs = [d for d in dirs if flt.lower() in d.lower()]
-            export_payload = [{"ip": obj.ip, "port": obj.port, "url": getattr(obj, "url", ""), "dirs": dirs[:max_items]}]
-        elif type_lower == "jenkins":
-            jobs = getattr(obj, "jobs", []) or []
-            if isinstance(jobs, str):
-                jobs = [j.strip() for j in jobs.split(",") if j.strip()]
-            flt = sel_filter or (selection.get("index") or "").strip()
-            if flt:
-                jobs = [j for j in jobs if flt.lower() in j.lower()]
-            export_payload = [{"ip": obj.ip, "port": obj.port, "url": getattr(obj, "url", ""), "jobs": jobs[:max_items]}]
-        elif type_lower == "ftp":
-            files = getattr(obj, "files", []) or []
-            if isinstance(files, str):
-                files = [f.strip() for f in files.split(",") if f.strip()]
-            flt = sel_filter or (selection.get("index") or "").strip()
-            if flt:
-                files = [f for f in files if flt.lower() in f.lower()]
-            export_payload = [{"ip": obj.ip, "port": obj.port, "files": files[:max_items]}]
-        elif type_lower == "rsync":
-            shares = getattr(obj, "shares", []) or []
-            if isinstance(shares, str):
-                shares = [s.strip() for s in shares.split(",") if s.strip()]
-            flt = sel_filter or (selection.get("index") or "").strip()
-            if flt:
-                shares = [s for s in shares if flt.lower() in s.lower()]
-            export_payload = [{"ip": obj.ip, "port": obj.port, "shares": shares[:max_items]}]
-        elif type_lower == "cassandra":
-            keyspaces = getattr(obj, "keyspaces", []) or []
-            if isinstance(keyspaces, str):
-                keyspaces = [k.strip() for k in keyspaces.split(",") if k.strip()]
-            flt = sel_filter or sel_keyspace or (selection.get("index") or "").strip()
-            if flt:
-                keyspaces = [k for k in keyspaces if flt.lower() in k.lower()]
-
-            # Optional live, no-auth schema peek to enrich keyspace/table listing using cassandra-driver
-            live_keyspaces: List[str] = []
-            table_map: Dict[str, List[str]] = {}
-            auth_required = False
-            candidate_ports = []
-            cport = _safe_int(obj.port, 9042)
-            for p in [9042, cport]:
-                if p not in candidate_ports:
-                    candidate_ports.append(p)
-            for p in candidate_ports:
-                try:
-                    profile = ExecutionProfile(
-                        load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="dc1", used_hosts_per_remote_dc=0),
-                        request_timeout=3,
-                    )
-                    cluster = Cluster(
-                        contact_points=[obj.ip],
-                        port=p,
-                        connect_timeout=3,
-                        protocol_version=4,
-                        execution_profiles={EXEC_PROFILE_DEFAULT: profile},
-                        allow_beta_protocol_version=False,
-                    )
-                    session = cluster.connect()
-                    try:
-                        ks_rows = session.execute("SELECT keyspace_name FROM system_schema.keyspaces")
-                        live_keyspaces = [r.keyspace_name for r in ks_rows][:25]
-                    except Exception as exc:
-                        if "auth" in str(exc).lower() or "permission" in str(exc).lower():
-                            auth_required = True
-                    try:
-                        tbl_rows = session.execute("SELECT keyspace_name, table_name FROM system_schema.tables")
-                        for r in tbl_rows:
-                            table_map.setdefault(r.keyspace_name, [])
-                            if len(table_map[r.keyspace_name]) < 25:
-                                table_map[r.keyspace_name].append(r.table_name)
-                    except Exception as exc:
-                        if "auth" in str(exc).lower() or "permission" in str(exc).lower():
-                            auth_required = True
-                    cluster.shutdown()
-                    break
-                except NoHostAvailable:
-                    continue
-                except Exception as exc:
-                    if "auth" in str(exc).lower() or "permission" in str(exc).lower():
-                        auth_required = True
-
-            combined_keyspaces = list({*(k for k in keyspaces), *(k for k in live_keyspaces)})
-            if flt:
-                combined_keyspaces = [k for k in combined_keyspaces if flt.lower() in k.lower()]
-
-            export_payload = [{
-                "ip": obj.ip,
-                "port": obj.port,
-                "keyspaces": combined_keyspaces[:max_items],
-                "tables": table_map,
-                "table_requested": sel_table,
-                "auth_required": auth_required,
-                "note": "No-auth schema peek only; provide keyspace/table to export. Auth-required clusters are not accessed, and rows are not fetched without open access."
-            }]
-        elif type_lower == "rethink":
-            dbs = getattr(obj, "databases", []) or []
-            if isinstance(dbs, str):
-                dbs = [d.strip() for d in dbs.split(",") if d.strip()]
-            flt = sel_filter or sel_keyspace or (selection.get("index") or "").strip()
-            if flt:
-                dbs = [d for d in dbs if flt.lower() in d.lower()]
-            export_payload = [{"ip": obj.ip, "port": obj.port, "databases": dbs[:max_items]}]
-        elif type_lower == "javascript":
-            secrets = getattr(obj, "secrets", "") or ""
-            context = getattr(obj, "context", "") or ""
-            secrets_list = [s.strip() for s in secrets.split(",") if s.strip()] if isinstance(secrets, str) else list(secrets)
-            ctx_list = [c.strip() for c in context.split(",") if c.strip()] if isinstance(context, str) else list(context)
-            flt = sel_filter or (selection.get("index") or "").strip()
-            items = []
-            for idx, sec in enumerate(secrets_list):
-                if flt and flt.lower() not in sec.lower():
-                    continue
-                items.append({"secret": sec, "context": ctx_list[idx] if idx < len(ctx_list) else ""})
-            export_payload = items[:max_items]
-        elif type_lower == "github":
-            secrets = getattr(obj, "secret", "") or ""
-            paths = getattr(obj, "path", "") or ""
-            commit = getattr(obj, "commit", "")
-            secrets_list = list(secrets) if isinstance(secrets, list) else [s.strip() for s in str(secrets).split(",") if s.strip()]
-            paths_list = list(paths) if isinstance(paths, list) else [p.strip() for p in str(paths).split(",") if p.strip()]
-            flt = sel_filter or (selection.get("index") or "").strip()
-            items = []
-            for idx, sec in enumerate(secrets_list):
-                if flt and flt.lower() not in sec.lower():
-                    continue
-                items.append({"secret": sec, "path": paths_list[idx] if idx < len(paths_list) else "", "commit": commit})
-            export_payload = items[:max_items]
-        elif type_lower == "solr":
-            base = _http_base(obj.ip, obj.port, scheme=getattr(obj, "scheme", "http") or "http")
-            core_name = _clean_name(sel_index) or ""
-            try:
-                cores = []
-                c_resp = requests.get(f"{base}/solr/admin/cores?action=STATUS&wt=json", timeout=8, verify=False)
-                if c_resp.status_code in (401, 403):
-                    export_payload = [{"error": "auth required"}]
-                elif c_resp.ok and isinstance(c_resp.json(), dict):
-                    status = c_resp.json().get("status", {})
-                    cores = list(status.keys())
-                if not core_name and cores:
-                    core_name = cores[0]
-                if core_name:
-                    rows_cap = _limit_max(max_items, default=50, hard_max=200)
-                    s_resp = requests.get(f"{base}/solr/{core_name}/select?q=*:*&rows={rows_cap}&wt=json", timeout=8, verify=False)
-                    if s_resp.status_code in (401, 403):
-                        export_payload = [{"error": "auth required"}]
-                    elif s_resp.ok:
-                        docs = s_resp.json().get("response", {}).get("docs", [])
-                        export_payload = docs[:rows_cap]
-                    else:
-                        export_payload = [{"error": f"HTTP {s_resp.status_code}"}]
-                elif not export_payload:
-                    export_payload = [{"message": "No cores found"}]
-            except Exception as exc:
-                export_payload = [{"error": str(exc)}]
-        elif type_lower in ("gitea", "gogs"):
-            repos = getattr(obj, "repos", "") or ""
-            if isinstance(repos, str):
-                try:
-                    repos_list = json.loads(repos)
-                except Exception:
-                    repos_list = [r.strip() for r in repos.split(",") if r.strip()]
-            else:
-                repos_list = list(repos)
-            flt = sel_filter or (selection.get("index") or "").strip()
-            if flt:
-                repos_list = [r for r in repos_list if flt.lower() in str(r).lower()]
-            export_payload = [{"repo": r} for r in repos_list[:max_items]]
-            if not export_payload:
-                export_payload = [{"message": "No repos found"}]
-        elif type_lower == "azureblob":
-            base_host = getattr(obj, "account", "") or getattr(obj, "search", None)
-            host = base_host if base_host else obj.ip
-            container = _clean_name(sel_index) or ""
-            try:
-                max_cap = _limit_max(max_items, default=50, hard_max=200)
-                base = f"{_http_base(host, obj.port, scheme=getattr(obj, 'scheme', 'https') or 'https')}".rstrip("/")
-                url = f"{base}/?comp=list&maxresults={max_cap}" if not container else f"{base}/{container}?restype=container&comp=list&maxresults={max_cap}"
-                resp = requests.get(url, timeout=8, verify=False)
-                if resp.status_code in (401, 403):
-                    export_payload = [{"error": "auth required"}]
-                elif resp.ok and "EnumerationResults" in resp.text:
-                    try:
-                        parsed = jxmlease.Parser()(resp.text)
-                        if not container:
-                            conts = parsed.get("EnumerationResults", {}).get("Containers", {}).get("Container", [])
-                            if isinstance(conts, dict):
-                                conts = [conts]
-                            export_payload = [{"container": c.get("Name")} for c in conts if isinstance(c, dict) and c.get("Name")]
-                        else:
-                            blobs = parsed.get("EnumerationResults", {}).get("Blobs", {}).get("Blob", [])
-                            if isinstance(blobs, dict):
-                                blobs = [blobs]
-                            export_payload = [{"blob": b.get("Name")} for b in blobs if isinstance(b, dict) and b.get("Name")][:max_cap]
-                            if not export_payload:
-                                export_payload = [{"message": "No blobs found"}]
-                    except Exception as exc:
-                        export_payload = [{"error": str(exc)}]
-                else:
-                    export_payload = [{"error": f"HTTP {resp.status_code}"}]
-            except Exception as exc:
-                export_payload = [{"error": str(exc)}]
-        elif type_lower == "gcsbucket":
-            host = getattr(obj, "bucket", "") or getattr(obj, "account", "") or obj.ip
-            prefix = _clean_name(sel_index) or ""
-            try:
-                max_cap = _limit_max(max_items, default=50, hard_max=200)
-                base = f"{_http_base(host, obj.port, scheme=getattr(obj, 'scheme', 'https') or 'https')}".rstrip("/")
-                url = f"{base}/"
-                if prefix:
-                    url = f"{base}/?prefix={prefix}&max-keys={max_cap}"
-                resp = requests.get(url, timeout=8, verify=False)
-                if resp.status_code in (401, 403):
-                    export_payload = [{"error": "auth required"}]
-                elif resp.ok and "ListBucketResult" in resp.text:
-                    try:
-                        parsed = jxmlease.Parser()(resp.text)
-                        contents = parsed.get("ListBucketResult", {}).get("Contents", [])
-                        if isinstance(contents, dict):
-                            contents = [contents]
-                        rows = []
-                        for idx, item in enumerate(contents):
-                            if idx >= max_cap:
-                                break
-                            if isinstance(item, dict) and item.get("Key"):
-                                rows.append({"object": item.get("Key")})
-                        export_payload = rows if rows else [{"message": "No objects found"}]
-                    except Exception as exc:
-                        export_payload = [{"error": str(exc)}]
-                else:
-                    export_payload = [{"error": f"HTTP {resp.status_code}"}]
-            except Exception as exc:
-                export_payload = [{"error": str(exc)}]
-        elif type_lower == "etcd":
-            base = _http_base(obj.ip, obj.port, scheme=getattr(obj, "scheme", "http") or "http")
-            prefix = _clean_name(sel_index) or ""
-            try:
-                resp = requests.get(f"{base}/v2/keys/{prefix}?recursive=true&sorted=true&limit={max_items}", timeout=8, verify=False)
-                if resp.status_code in (401, 403):
-                    export_payload = [{"error": "auth required"}]
-                elif resp.status_code == 404:
-                    payload = {"key": "", "range_end": "", "limit": max_items}
-                    v3 = requests.post(f"{base}/v3/kv/range", json=payload, timeout=8, verify=False)
-                    if v3.ok:
-                        data = []
-                        for kvs in v3.json().get("kvs", []) or []:
-                            k = kvs.get("key")
-                            v = kvs.get("value")
-                            if k:
-                                key_dec = base64.b64decode(k).decode(errors="ignore")
-                                val_dec = base64.b64decode(v).decode(errors="ignore") if v else ""
-                                data.append({"key": key_dec, "value": val_dec})
-                        export_payload = data
-                    else:
-                        export_payload = [{"error": f"HTTP {v3.status_code}"}]
-                elif resp.ok:
-                    data = []
-                    try:
-                        def _collect(node):
-                            if isinstance(node, dict):
-                                key = node.get("key")
-                                val = node.get("value")
-                                if key:
-                                    data.append({"key": key, "value": val})
-                                for child in node.get("nodes", []) or []:
-                                    _collect(child)
-                        _collect(resp.json().get("node", {}))
-                    except Exception:
-                        pass
-                    export_payload = data[:max_items]
-                else:
-                    export_payload = [{"error": f"HTTP {resp.status_code}"}]
-            except Exception as exc:
-                export_payload = [{"error": str(exc)}]
-        elif type_lower == "consul":
-            base = _http_base(obj.ip, obj.port, scheme=getattr(obj, "scheme", "http") or "http")
-            prefix = _clean_name(sel_index) or ""
-            try:
-                keys_url = f"{base}/v1/kv/{prefix}?keys&recurse&limit={max_items}" if prefix else f"{base}/v1/kv/?keys&limit={max_items}"
-                resp = requests.get(keys_url, timeout=8, verify=False)
-                if resp.status_code in (401, 403):
-                    export_payload = [{"error": "auth required"}]
-                elif resp.ok:
-                    data = []
-                    if isinstance(resp.json(), list):
-                        for k in resp.json()[:max_items]:
-                            data.append({"key": k})
-                    export_payload = data
-                else:
-                    export_payload = [{"error": f"HTTP {resp.status_code}"}]
-            except Exception as exc:
-                export_payload = [{"error": str(exc)}]
-        elif type_lower == "rabbitmq":
-            base = _http_base(obj.ip, obj.port, scheme=getattr(obj, "scheme", "http") or "http")
-            try:
-                qresp = requests.get(f"{base}/api/queues", timeout=8, verify=False)
-                if qresp.status_code in (401, 403):
-                    export_payload = [{"error": "auth required"}]
-                elif qresp.ok:
-                    data = []
-                    if isinstance(qresp.json(), list):
-                        cap = _limit_max(max_items, default=50, hard_max=500)
-                        for q in qresp.json()[:cap]:
-                            if isinstance(q, dict):
-                                data.append({"name": q.get("name"), "vhost": q.get("vhost"), "messages": q.get("messages")})
-                    export_payload = data
-                else:
-                    export_payload = [{"error": f"HTTP {qresp.status_code}"}]
-            except Exception as exc:
-                export_payload = [{"error": str(exc)}]
-        else:
-            export_payload = []
-
-        file_info = _write_export_file(export_payload, fmt or "json")
-        meta = {"type": type_lower, "download_token": file_info["token"], "filename": file_info["path"]}
-        self.update_state(state="SUCCESS", meta=_json_safe_meta(meta))
-        raise Ignore()
-    except Exception as exc:
-        self.update_state(state="FAILURE", meta=_json_safe_meta({"error": str(exc)}))
-        raise Ignore()
-
-    if type.lower() == "mongo":
-        for c, i in enumerate(req_json['events']):
-            results_mongo = check_mongo(c, i, search, keyword=keyword, config=config)
-            progress_recorder.set_progress(c + 1, total=total)
-            results[c] = results_mongo
-
-        self.update_state(state="SUCCESS",
-                          meta={"type": type.lower(), "total": total, 'events': events, 'results': results})
-        raise Ignore()
-    if type.lower() == "rsync":
-        for c, i in enumerate(req_json['events']):
-            results_rsync = check_rsync(c, i, search, config=config)
-            progress_recorder.set_progress(c + 1, total=total)
-            results[c] = results_rsync
-
-        self.update_state(state="SUCCESS",
-                          meta={"type": type.lower(), "total": total, 'events': events, 'results': results})
-        raise Ignore()
-
-    if type.lower() == "ftp":
-        for c, i in enumerate(req_json['events']):
-            results_ftp = check_ftp(c, i, search, keyword=keyword, config=config)
-            progress_recorder.set_progress(c + 1, total=total)
-            results[c] = results_ftp
-
-        self.update_state(state="SUCCESS",
-                          meta={"type": type.lower(), "total": total, 'events': events, 'results': results})
-
-        raise Ignore()
-
-    if type.lower() == "sonarqube":
-        for c, i in enumerate(req_json['events']):
-            results_sonarqube = check_sonarqube(c, i, search, config=config)
-            progress_recorder.set_progress(c + 1, total=total)
-            results[c] = results_sonarqube
-
-        self.update_state(state="SUCCESS",
-                          meta={"type": type.lower(), "total": total, 'events': events, 'results': results})
-        raise Ignore()
-
-    if type.lower() == "couchdb":
-        for c, i in enumerate(req_json['events']):
-            results_couchdb = check_couchdb(c, i, search, config=config)
-            progress_recorder.set_progress(c + 1, total=total)
-            results[c] = results_couchdb
-
-        self.update_state(state="SUCCESS",
-                          meta={"type": type.lower(), "total": total, 'events': events, 'results': results})
-        raise Ignore()
-
-    if type.lower() == "kibana":
-        for c, i in enumerate(req_json['events']):
-            results_kibana = check_kibana(c, i, search, config=config)
-            progress_recorder.set_progress(c + 1, total=total)
-            results[c] = results_kibana
-
-        self.update_state(state="SUCCESS",
-                          meta={"type": type.lower(), "total": total, 'events': events, 'results': results})
-        raise Ignore()
-
-    if type.lower() == "cassandra":
-        for c, i in enumerate(req_json['events']):
-            results_cassandra = check_cassandra(c, i, search, config=config)
-            progress_recorder.set_progress(c + 1, total=total)
-            results[c] = results_cassandra
-
-        self.update_state(state="SUCCESS",
-                          meta={"type": type.lower(), "total": total, 'events': events, 'results': results})
-        raise Ignore()
-
-    if type.lower() == "rethink":
-        for c, i in enumerate(req_json['events']):
-            results_rethink = check_rethink(c, i, search, config=config)
-            progress_recorder.set_progress(c + 1, total=total)
-            results[c] = results_rethink
-
-        self.update_state(state="SUCCESS",
-                          meta={"type": type.lower(), "total": total, 'events': events, 'results': results})
-        raise Ignore()
-
-
-    return results
 
 
 @app.task
@@ -2800,44 +686,8 @@ def monitor(types, keyword="", network="", provider: str = "shodan"):
             continue
 
         for c, match in enumerate(matches):
-            if type_lower in keys_all:
-                payload = check_keys(c, match, search, config=config)
-            elif type_lower in ('asia', 'europe', 'north america'):
-                payload = check_amazonbe(c, match, search, config=config)
-            elif type_lower == 'gitlab':
-                payload = check_gitlab(c, match, search, config=config)
-            elif type_lower == 'elastic':
-                payload = check_elastic(c, match, search, keyword=keyword, config=config)
-            elif type_lower == 'angular':
-                payload = check_angular(c, match, search, keyword=keyword, config=config)
-            elif type_lower == 'amazons3be':
-                payload = check_amazons3be(c, match, search, keyword=keyword, config=config)
-            elif type_lower == 'dirs':
-                payload = check_dir(c, match, search, keyword=keyword, config=config)
-            elif type_lower == 'jenkins':
-                payload = check_jenkins(c, match, search, keyword=keyword, config=config)
-            elif type_lower == 'mongo':
-                payload = check_mongo(c, match, search, keyword=keyword, config=config)
-            elif type_lower == 'rsync':
-                payload = check_rsync(c, match, search, config=config)
-            elif type_lower == 'ftp':
-                payload = check_ftp(c, match, search, keyword=keyword, config=config)
-            elif type_lower == 'sonarqube':
-                payload = check_sonarqube(c, match, search, config=config)
-            elif type_lower == 'couchdb':
-                payload = check_couchdb(c, match, search, config=config)
-            elif type_lower == 'kibana':
-                payload = check_kibana(c, match, search, config=config)
-            elif type_lower == 'cassandra':
-                payload = check_cassandra(c, match, search, config=config)
-            elif type_lower == 'rethink':
-                payload = check_rethink(c, match, search, config=config)
-            elif type_lower == 'etcd':
-                payload = check_etcd(c, match, search, config=config)
-            elif type_lower == 'consul':
-                payload = check_consul(c, match, search, config=config)
-            elif type_lower == 'rabbitmq':
-                payload = check_rabbitmq(c, match, search, config=config)
+            if discovery_handler(type_lower):
+                payload = dispatch_discovery(type_lower,c,match,search,config,keyword=keyword,active_probe=False)
             else:
                 payload = {}
 
@@ -2851,8 +701,6 @@ def monitor(types, keyword="", network="", provider: str = "shodan"):
 
     return return_dict
 
-
-## { 'gitlab': {'keyword":"fa"}, 0 : {'ip':1111.1.1}}
 
 def send_mail(results):
     config = get_config()
@@ -2884,7 +732,7 @@ def send_mail(results):
     msg.set_payload(''.join(body_lines))
 
     try:
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=15)
         server.ehlo()
         server.login(gmail_user, gmail_password)
         server.sendmail(msg['From'], [msg['To']], msg.as_string())
@@ -2893,1303 +741,12 @@ def send_mail(results):
     except Exception as exc:
         logger.error('Failed to send monitoring email: %s', exc)
 
-def check_amazons3be(c, match, search, keyword, config):
-    return_dict = {}
-    parser = jxmlease.Parser()
-
-    ip, port = extract_ip_port(match)
-    files: list = []
-    indicators: list = []
-
-    if Amazons3be.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    body = get_http_html(match) or match.get('data', '')
-    if not body or 'ListBucketResult' not in body:
-        return return_dict
-
-    try:
-        root = parser(body)
-        contents = root.get('ListBucketResult', {}).get('Contents', [])
-        if isinstance(contents, dict):
-            contents = [contents]
-
-        for counter, item in enumerate(contents):
-            if isinstance(item, dict):
-                key_value = str(item.get('Key', ''))
-            else:
-                key_value = str(item)
-
-            if keyword and key_value and keyword.lower() in key_value.lower():
-                indicators.append(key_value)
-
-            if counter < 50 and key_value:
-                files.append(key_value)
-
-        if files:
-            device = Amazons3be(search=search, ip=ip, port=port, files=files, indicator=indicators)
-            device.save()
-            return_dict[c] = {"ip": ip, "port": port, 'files': files}
-    except Exception as exc:
-        logger.debug("Failed to parse Amazon S3 bucket listing for %s: %s", ip, exc)
-
-    return return_dict
-
-
-def check_rethink(c, match, search, config):
-    return_dict = {}
-
-    ip, port = extract_ip_port(match)
-    databases = []
-
-    if Rethink.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    payload = match.get('rethinkdb') or parse_json_payload(match.get('data')) or {}
-    if isinstance(payload, str):
-        payload = parse_json_payload(payload) or {}
-
-    if isinstance(payload, dict):
-        for database in payload.get('databases', []):
-            if isinstance(database, dict):
-                name = database.get('name') or database.get('db')
-                if name:
-                    databases.append(name)
-            elif database:
-                databases.append(str(database))
-
-    # Save even when databases are empty to surface the finding in UI
-    device = Rethink(search=search, ip=ip, port=port, databases=databases)
-    device.save()
-    return_dict[c] = {"ip": ip, "port": port, 'databases': databases}
-
-    return return_dict
-
-
-def check_cassandra(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    keyspaces = []
-
-    if Cassandra.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    payload = match.get('cassandra') or parse_json_payload(match.get('data')) or {}
-    if isinstance(payload, str):
-        payload = parse_json_payload(payload) or {}
-
-    if isinstance(payload, dict):
-        for keyspace in payload.get('keyspaces', []):
-            if isinstance(keyspace, dict):
-                name = keyspace.get('name')
-                if name:
-                    keyspaces.append(name)
-            elif keyspace:
-                keyspaces.append(str(keyspace))
-
-    # Persist even when keyspaces are unknown so preview/export can still be attempted.
-    device = Cassandra(search=search, ip=ip, port=port, keyspaces=keyspaces)
-    device.save()
-    return_dict[c] = {"ip": ip, "port": port, 'keyspaces': keyspaces}
-
-    return return_dict
-
-
-def check_etcd(c, match, search, config, active_probe: bool = False):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if Etcd.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    scheme_used = "http"
-    version = ""
-    status = ""
-    auth_required = False
-    keys_sample: List[str] = []
-
-    if not active_probe:
-        device = Etcd(search=search, ip=ip, port=port, scheme=scheme_used, version=version, status=status,
-                      keys_sample=json.dumps(keys_sample), auth_required=auth_required)
-        device.save()
-        return_dict[c] = {"ip": ip, "port": port, "auth_required": auth_required}
-        return return_dict
-
-    def _collect_keys(node) -> None:
-        if isinstance(node, dict):
-            key = node.get("key")
-            if key:
-                keys_sample.append(key)
-            for child in node.get("nodes", []) or []:
-                _collect_keys(child)
-
-    def _base(scheme: str) -> str:
-        return _http_base(ip, port, scheme=scheme)
-
-    # try http then https
-    for scheme in ("http", "https"):
-        try:
-            base = _base(scheme)
-            ver_resp = requests.get(f"{base}/version", timeout=4, verify=False)
-            if ver_resp.status_code in (401, 403):
-                auth_required = True
-                continue
-            if ver_resp.ok and isinstance(ver_resp.json(), dict):
-                version = ver_resp.json().get("etcdcluster", "") or ver_resp.json().get("etcdserver", "")
-                scheme_used = scheme
-            health_resp = requests.get(f"{base}/health", timeout=4, verify=False)
-            if health_resp.status_code in (401, 403):
-                auth_required = True
-            elif health_resp.ok:
-                status = str(health_resp.text or "")
-            # try v2 keys
-            try:
-                kv_resp = requests.get(f"{base}/v2/keys/?recursive=true&sorted=true&limit=50", timeout=5, verify=False)
-                if kv_resp.status_code in (401, 403):
-                    auth_required = True
-                elif kv_resp.status_code == 404:
-                    # try v3
-                    payload = {"key": "", "range_end": "", "limit": 50}
-                    v3 = requests.post(f"{base}/v3/kv/range", json=payload, timeout=5, verify=False)
-                    if v3.status_code in (401, 403):
-                        auth_required = True
-                    elif v3.ok:
-                        try:
-                            data = v3.json()
-                            for kv in data.get("kvs", []) or []:
-                                k = kv.get("key")
-                                if k:
-                                    keys_sample.append(base64.b64decode(k).decode(errors="ignore"))
-                        except Exception:
-                            pass
-                elif kv_resp.ok:
-                    try:
-                        data = kv_resp.json()
-                        _collect_keys(data.get("node", {}))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            break
-        except Exception:
-            continue
-
-    device = Etcd(search=search, ip=ip, port=port, scheme=scheme_used, version=version, status=status,
-                  keys_sample=json.dumps(keys_sample), auth_required=auth_required)
-    device.save()
-    return_dict[c] = {"ip": ip, "port": port, "version": version, "status": status, "keys": keys_sample,
-                      "auth_required": auth_required}
-    return return_dict
-
-
-def check_consul(c, match, search, config, active_probe: bool = False):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if ConsulKV.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    scheme_used = "http"
-    datacenters: List[str] = []
-    services: List[str] = []
-    kv_roots: List[str] = []
-    auth_required = False
-
-    if not active_probe:
-        device = ConsulKV(search=search, ip=ip, port=port, scheme=scheme_used,
-                          datacenters=json.dumps(datacenters), services=json.dumps(services),
-                          kv_roots=json.dumps(kv_roots), auth_required=auth_required)
-        device.save()
-        return_dict[c] = {"ip": ip, "port": port, "auth_required": auth_required}
-        return return_dict
-
-    for scheme in ("http", "https"):
-        base = _http_base(ip, port, scheme=scheme)
-        try:
-            dc_resp = requests.get(f"{base}/v1/catalog/datacenters", timeout=4, verify=False)
-            if dc_resp.status_code in (401, 403):
-                auth_required = True
-                continue
-            if dc_resp.ok and isinstance(dc_resp.json(), list):
-                datacenters = list(dc_resp.json()[:50])
-                scheme_used = scheme
-            svc_resp = requests.get(f"{base}/v1/catalog/services", timeout=4, verify=False)
-            if svc_resp.status_code in (401, 403):
-                auth_required = True
-            elif svc_resp.ok and isinstance(svc_resp.json(), dict):
-                services = list(svc_resp.json().keys())[:50]
-            kv_resp = requests.get(f"{base}/v1/kv/?keys&limit=50", timeout=5, verify=False)
-            if kv_resp.status_code in (401, 403):
-                auth_required = True
-            elif kv_resp.ok and isinstance(kv_resp.json(), list):
-                kv_roots = list(kv_resp.json()[:50])
-            break
-        except Exception:
-            continue
-
-    device = ConsulKV(search=search, ip=ip, port=port, scheme=scheme_used, datacenters=json.dumps(datacenters),
-                      services=json.dumps(services), kv_roots=json.dumps(kv_roots), auth_required=auth_required)
-    device.save()
-    return_dict[c] = {"ip": ip, "port": port, "datacenters": datacenters, "services": services,
-                      "kv_roots": kv_roots, "auth_required": auth_required}
-    return return_dict
-
-
-def check_rabbitmq(c, match, search, config, active_probe: bool = False):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if Rabbitmq.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    scheme_used = "http"
-    version = ""
-    vhosts: List[str] = []
-    queues: List[str] = []
-    auth_required = False
-
-    if not active_probe:
-        device = Rabbitmq(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
-                          vhosts=json.dumps(vhosts), queues=json.dumps(queues), auth_required=auth_required)
-        device.save()
-        return_dict[c] = {"ip": ip, "port": port, "auth_required": auth_required}
-        return return_dict
-
-    for scheme in ("http", "https"):
-        base = _http_base(ip, port, scheme=scheme)
-        try:
-            overview = requests.get(f"{base}/api/overview", timeout=4, verify=False)
-            if overview.status_code in (401, 403):
-                auth_required = True
-                continue
-            if overview.ok and isinstance(overview.json(), dict):
-                version = overview.json().get("rabbitmq_version", "") or overview.json().get("management_version", "")
-                scheme_used = scheme
-            vh = requests.get(f"{base}/api/vhosts", timeout=4, verify=False)
-            if vh.status_code in (401, 403):
-                auth_required = True
-            elif vh.ok and isinstance(vh.json(), list):
-                vhosts = [item.get("name", "") for item in vh.json() if item.get("name")] if isinstance(vh.json()[0], dict) else vh.json()[:50]
-            qresp = requests.get(f"{base}/api/queues", timeout=5, verify=False)
-            if qresp.status_code in (401, 403):
-                auth_required = True
-            elif qresp.ok and isinstance(qresp.json(), list):
-                for q in qresp.json()[:50]:
-                    if isinstance(q, dict) and q.get("name"):
-                        queues.append(q.get("name"))
-            break
-        except Exception:
-            continue
-
-    device = Rabbitmq(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
-                      vhosts=json.dumps(vhosts), queues=json.dumps(queues), auth_required=auth_required)
-    device.save()
-    return_dict[c] = {"ip": ip, "port": port, "version": version, "vhosts": vhosts, "queues": queues,
-                      "auth_required": auth_required}
-    return return_dict
-
-
-def _infer_host(match: Dict[str, Any]) -> str:
-    http_info = match.get("http") or {}
-    host_hdr = (http_info.get("host") or "").strip()
-    if host_hdr:
-        return host_hdr
-    return str(match.get("ip_str") or match.get("ip") or "")
-
-
-def check_azureblob(c, match, search, config, active_probe: bool = False):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    host = _infer_host(match)
-    if AzureBlob.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    scheme_used = "https"
-    containers: List[str] = []
-    auth_required = False
-
-    if not active_probe:
-        device = AzureBlob(search=search, ip=ip, port=port, scheme=scheme_used, account=host,
-                           containers=json.dumps(containers), auth_required=auth_required)
-        device.save()
-        return_dict[c] = {"ip": ip, "port": port, "account": host, "auth_required": auth_required}
-        return return_dict
-
-    base = f"https://{host}"
-    try:
-        resp = requests.get(f"{base}/?comp=list&maxresults=50", timeout=8, verify=False)
-        if resp.status_code in (401, 403):
-            auth_required = True
-        elif resp.ok and "ListContainers" in resp.text:
-            try:
-                parsed = jxmlease.Parser()(resp.text)
-                conts = parsed.get("EnumerationResults", {}).get("Containers", {}).get("Container", [])
-                if isinstance(conts, dict):
-                    conts = [conts]
-                for container in conts[:50]:
-                    if isinstance(container, dict):
-                        name = container.get("Name")
-                        if name:
-                            containers.append(str(name))
-                    elif container:
-                        containers.append(str(container))
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    device = AzureBlob(search=search, ip=ip, port=port, scheme=scheme_used, account=host,
-                       containers=json.dumps(containers), auth_required=auth_required)
-    device.save()
-    return_dict[c] = {"ip": ip, "port": port, "account": host, "containers": containers, "auth_required": auth_required}
-    return return_dict
-
-
-def check_gcsbucket(c, match, search, config, active_probe: bool = False):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    host = _infer_host(match)
-    if GcsBucket.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    scheme_used = "https"
-    bucket_name = host
-    objects: List[str] = []
-    auth_required = False
-
-    if not active_probe:
-        device = GcsBucket(search=search, ip=ip, port=port, scheme=scheme_used, bucket=bucket_name,
-                           objects=json.dumps(objects), auth_required=auth_required)
-        device.save()
-        return_dict[c] = {"ip": ip, "port": port, "bucket": bucket_name, "auth_required": auth_required}
-        return return_dict
-
-    base = f"https://{host}"
-    try:
-        resp = requests.get(f"{base}/", timeout=8, verify=False)
-        if resp.status_code in (401, 403):
-            auth_required = True
-        elif resp.ok and "ListBucketResult" in resp.text:
-            try:
-                parsed = jxmlease.Parser()(resp.text)
-                contents = parsed.get("ListBucketResult", {}).get("Contents", [])
-                if isinstance(contents, dict):
-                    contents = [contents]
-                for idx, item in enumerate(contents):
-                    if idx >= 50:
-                        break
-                    if isinstance(item, dict):
-                        key_val = item.get("Key")
-                        if key_val:
-                            objects.append(str(key_val))
-                    elif item:
-                        objects.append(str(item))
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    device = GcsBucket(search=search, ip=ip, port=port, scheme=scheme_used, bucket=bucket_name,
-                       objects_list=json.dumps(objects), auth_required=auth_required)
-    device.save()
-    return_dict[c] = {"ip": ip, "port": port, "bucket": bucket_name, "objects": objects, "auth_required": auth_required}
-    return return_dict
-
-
-def check_solr(c, match, search, config, active_probe: bool = False):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if Solr.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    scheme_used = "http"
-    version = ""
-    core_names: List[str] = []
-    auth_required = False
-
-    if not active_probe:
-        device = Solr(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
-                      core_count=None, cores=json.dumps(core_names), auth_required=auth_required)
-        device.save()
-        return_dict[c] = {"ip": ip, "port": port, "auth_required": auth_required}
-        return return_dict
-
-    for scheme in ("http", "https"):
-        base = _http_base(ip, port, scheme=scheme)
-        try:
-            cores_resp = requests.get(f"{base}/solr/admin/cores?action=STATUS&wt=json", timeout=6, verify=False)
-            if cores_resp.status_code in (401, 403):
-                auth_required = True
-                continue
-            if cores_resp.ok and isinstance(cores_resp.json(), dict):
-                status = cores_resp.json().get("status", {})
-                if isinstance(status, dict):
-                    for name in list(status.keys())[:50]:
-                        core_names.append(name)
-                version = cores_resp.headers.get("X-Solr-Version", "") or cores_resp.json().get("responseHeader", {}).get("server", "")
-                scheme_used = scheme
-                break
-        except Exception:
-            continue
-
-    device = Solr(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
-                  core_count=len(core_names) if core_names else None, cores=json.dumps(core_names), auth_required=auth_required)
-    device.save()
-    return_dict[c] = {"ip": ip, "port": port, "cores": core_names, "version": version, "auth_required": auth_required}
-    return return_dict
-
-
-def check_gitea(c, match, search, config, active_probe: bool = False, product_hint: str = "gitea"):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    Model = Gitea if product_hint == "gitea" else Gogs
-    if Model.objects.filter(ip=ip, port=port).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    scheme_used = "http"
-    version = ""
-    repos: List[str] = []
-    users: List[str] = []
-    auth_required = False
-
-    if not active_probe:
-        device = Model(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
-                       repos=json.dumps(repos), users=json.dumps(users), auth_required=auth_required)
-        device.save()
-        return_dict[c] = {"ip": ip, "port": port, "auth_required": auth_required}
-        return return_dict
-
-    for scheme in ("http", "https"):
-        base = _http_base(ip, port, scheme=scheme)
-        try:
-            root = requests.get(base, timeout=6, verify=False)
-            if root.status_code in (401, 403):
-                auth_required = True
-            if root.ok:
-                scheme_used = scheme
-                # Best effort parse version from headers or body
-                version = root.headers.get("Server", "") or ""
-            # Repos search
-            repo_resp = requests.get(f"{base}/api/v1/repos/search?limit=50", timeout=6, verify=False)
-            if repo_resp.status_code in (401, 403):
-                auth_required = True
-            elif repo_resp.ok and isinstance(repo_resp.json(), dict):
-                data = repo_resp.json().get("data", []) or repo_resp.json().get("repos", [])
-                for r in data:
-                    if isinstance(r, dict) and r.get("full_name"):
-                        repos.append(r.get("full_name"))
-            # Users search
-            user_resp = requests.get(f"{base}/api/v1/users/search?limit=50", timeout=6, verify=False)
-            if user_resp.status_code in (401, 403):
-                auth_required = True
-            elif user_resp.ok and isinstance(user_resp.json(), dict):
-                data = user_resp.json().get("data", []) or user_resp.json().get("users", [])
-                for u in data:
-                    if isinstance(u, dict) and u.get("username"):
-                        users.append(u.get("username"))
-            break
-        except Exception:
-            continue
-
-    device = Model(search=search, ip=ip, port=port, scheme=scheme_used, version=version,
-                   repos=json.dumps(repos), users=json.dumps(users), auth_required=auth_required)
-    device.save()
-    return_dict[c] = {"ip": ip, "port": port, "version": version, "repos": repos, "users": users,
-                      "auth_required": auth_required}
-    return return_dict
-
-
-
-def check_ftp(c, match, search, keyword, config):
-    return_dict = {}
-    files: list = []
-    indicator: list = []
-
-    ip, port = extract_ip_port(match)
-
-    if Ftp.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    ftp_payload = match.get('ftp') or parse_json_payload(match.get('data')) or {}
-    if isinstance(ftp_payload, str):
-        ftp_payload = parse_json_payload(ftp_payload) or {}
-
-    entries = ftp_payload.get('files') or ftp_payload.get('content') or []
-
-    # Shodan's FTP module often only reports feature flags/anonymous access, not listings.
-    if not entries and isinstance(ftp_payload, dict):
-        feature_names = list((ftp_payload.get('features') or {}).keys())
-        if feature_names:
-            files.extend(feature_names)
-        if ftp_payload.get('anonymous'):
-            indicator.append('anonymous')
-
-    def walk(nodes, parent_chain=None):
-        parent_chain = parent_chain or []
-        for node in nodes:
-            if isinstance(node, dict):
-                name = node.get('name')
-                node_type = node.get('type')
-                child_content = node.get('content') or []
-            else:
-                name = str(node)
-                node_type = None
-                child_content = []
-
-            if not name:
-                continue
-
-            lower_name = name.lower()
-            if keyword and keyword.lower() in lower_name:
-                indicator.extend(parent_chain + [name])
-
-            if node_type == 'd':
-                files.append(name)
-                if child_content:
-                    walk(child_content, parent_chain + [name])
-
-    if isinstance(entries, list):
-        walk(entries)
-
-    files = [entry for entry in files if entry not in ('.', '..')]
-
-    device = Ftp(search=search, ip=ip, port=port, files=files, indicator=indicator)
-    device.save()
-    return_dict[c] = {"ip": ip, "port": port, 'files': files}
-
-    return return_dict
-
-
-
-def check_kibana(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-
-    if Kibana.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    device = Kibana(search=search, ip=ip, port=port)
-    device.save()
-
-    return_dict[c] = {"ip": ip, "port": port}
-
-    return return_dict
-
-
-def check_couchdb(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-
-    if Couchdb.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    device = Couchdb(search=search, ip=ip, port=port)
-    device.save()
-
-    return_dict[c] = {"ip": ip, "port": port}
-
-    return return_dict
-
-
-def check_sonarqube(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-
-    if Sonarqube.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    url = build_service_url(match)
-
-    device = Sonarqube(search=search, url=url, ip=ip, port=port)
-    device.save()
-
-    return_dict[c] = {"url": url, "ip": ip, "port": port}
-
-    return return_dict
-
-
-def check_rsync(c, match, search, config):
-    return_dict = {}
-    shares = []
-    ip, port = extract_ip_port(match)
-
-    if Rsync.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    banner = match.get('data') or ''
-    if isinstance(banner, bytes):
-        banner = banner.decode('utf-8', errors='ignore')
-
-    for line in str(banner).splitlines():
-        cleaned = line.strip()
-        if cleaned:
-            shares.append(cleaned)
-
-    device = Rsync(search=search, ip=ip, port=port, shares=shares)
-    device.save()
-
-    return_dict[c] = {"ip": ip, "port": port, "shares": shares}
-
-    return return_dict
-
-
-def check_jenkins(c, match, search, keyword, config):
-    return_dict = {}
-    jobs = []
-    indicators = []
-    ip, port = extract_ip_port(match)
-
-    if Jenkins.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    html_code = get_http_html(match)
-    url = build_service_url(match)
-
-    if html_code:
-        try:
-            soup = BeautifulSoup(html_code, features="html.parser")
-            for project in soup.find_all("a", {"class": "model-link inside"}):
-                href = project.get('href', '')
-                if href.startswith("job"):
-                    splitted = href.split("/")
-                    if len(splitted) > 1:
-                        job_name = splitted[1]
-                        jobs.append(job_name)
-                        if keyword and keyword.lower() in job_name.lower():
-                            indicators.append(job_name)
-        except Exception as exc:
-            logger.debug("Failed to parse Jenkins HTML for %s: %s", ip, exc)
-
-    device = Jenkins(search=search, url=url, ip=ip, port=port, jobs=jobs, indicator=indicators)
-    if html_code or jobs:
-        device.save()
-        return_dict[c] = {"url": url, "ip": ip, "port": port, "jobs": jobs}
-
-    return return_dict
-
-@app.task
-def check_mongo(c, match, search, keyword, config):
-    return_dict = {}
-    dbs = []
-    indicators = []
-    bytes_size = 0
-
-    ip, port = extract_ip_port(match)
-
-    if Mongo.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    mongo_payload = match.get('mongodb') or parse_json_payload(match.get('data')) or {}
-    if isinstance(mongo_payload, str):
-        mongo_payload = parse_json_payload(mongo_payload) or {}
-    databases_info = {}
-    if isinstance(mongo_payload, dict):
-        databases_info = mongo_payload.get('listDatabases') or mongo_payload.get('databases') or {}
-
-    databases = databases_info.get('databases') if isinstance(databases_info, dict) else []
-
-    for entry in databases or []:
-        if isinstance(entry, dict):
-            name = entry.get('name')
-            size_on_disk = entry.get('sizeOnDisk', 0)
-        else:
-            name = str(entry)
-            size_on_disk = 0
-
-        if not name:
-            continue
-
-        if isinstance(size_on_disk, (int, float)):
-            bytes_size += size_on_disk
-
-        dbs.append(name)
-        if keyword and keyword.lower() in name.lower():
-            indicators.append(name)
-
-    size_readable = size(bytes_size) if bytes_size else "0B"
-    mongo_url = f"mongodb://{ip}:{port}" if port else f"mongodb://{ip}"
-
-    device = Mongo(search=search, ip=ip, port=port, databases=dbs, size=str(size_readable), indicator=indicators)
-    if dbs or bytes_size:
-        device.save()
-        return_dict[c] = {"url": mongo_url, "ip": ip, "port": port, 'databases': dbs, "size": str(size_readable)}
-
-    return return_dict
-
-def parser_file(content, regex_str, keyword, mode=1, more_regex=None, no_dup=1):
-    '''
-    Parse Input
-    content:    string of content to be searched
-    regex_str:  string of regex (The link should be in the group(1))
-    mode:       mode of parsing. Set 1 to include surrounding contexts in the result
-    more_regex: string of regex to filter the result
-    no_dup:     remove duplicated link (context is NOT counted)
-    Return the list of ["link": link, "context": context]
-    The context is optional if mode=1 is provided.
-    '''
-    global context_delimiter_str
-
-    ip = keyword.split("/")
-    if mode == 1:
-        # Beautify
-        if len(content) > 1000000:
-            content = content.replace(";",";\r\n").replace(",",",\r\n")
-            with open(ip[2] +".js",'w') as f:
-                f.write(content)
-        else:
-            content = jsbeautifier.beautify(content)
-            with open(ip[2] +".js",'w') as f:
-                f.write(content)
-
-    regex = re.compile(regex_str, re.VERBOSE)
-
-    if mode == 1:
-        all_matches = [(m.group(1), m.start(0), m.end(0)) for m in re.finditer(regex, content)]
-        items = getContext(all_matches, content, context_delimiter_str=context_delimiter_str)
-    else:
-        items = [{"link": m.group(1)} for m in re.finditer(regex, content)]
-
-    if no_dup:
-        # Remove duplication
-        all_links = set()
-        no_dup_items = []
-        for item in items:
-            if item["link"] not in all_links:
-                all_links.add(item["link"])
-                no_dup_items.append(item)
-        items = no_dup_items
-
-    # Match Regex
-    filtered_items = []
-    for item in items:
-        # Remove other capture groups from regex results
-        if more_regex:
-            if re.search(more_regex, item["link"]):
-                filtered_items.append(item)
-        else:
-            filtered_items.append(item)
-
-    return filtered_items
-
-
-@app.task
-def check_dir(c, match, search, keyword, config):
-    return_dict = {}
-    indicators = []
-    dirs = []
-
-    ip, port = extract_ip_port(match)
-
-    if Dirs.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    html_code = get_http_html(match)
-    url = build_service_url(match)
-
-    if html_code:
-        try:
-            soup = BeautifulSoup(html_code, features="html.parser")
-            for project in soup.find_all("a", href=True):
-                text = project.get_text().strip()
-                if text in {"Name", "Last modified", "Size", "Description", "Parent Directory"}:
-                    continue
-                if text:
-                    dirs.append(text)
-                    if keyword and keyword.lower() in text.lower():
-                        indicators.append(text)
-        except Exception as exc:
-            logger.debug("Failed to parse directory listing for %s: %s", ip, exc)
-
-    device = Dirs(search=search, url=url, ip=ip, port=port, dirs=dirs, indicator=indicators)
-    if dirs:
-        device.save()
-        return_dict[c] = {"url": url, "ip": ip, "port": port, 'dirs': dirs}
-
-    return return_dict
-
-def send_request(url):
-    '''
-    Send requests with Requests
-    '''
-    q = Request(url)
-
-    q.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
-        AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36')
-    q.add_header('Accept', 'text/html,\
-        application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8')
-    q.add_header('Accept-Language', 'en-US,en;q=0.8')
-    q.add_header('Accept-Encoding', 'gzip')
-
-    try:
-        sslcontext = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-        response = urlopen(q, context=sslcontext)
-    except:
-        sslcontext = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-        response = urlopen(q, context=sslcontext)
-
-    if response.info().get('Content-Encoding') == 'gzip':
-        data = GzipFile(fileobj=readBytesCustom(response.read())).read()
-    elif response.info().get('Content-Encoding') == 'deflate':
-        data = response.read().read()
-    else:
-        data = response.read()
-
-    return data.decode('utf-8', 'replace')
-
-@app.task
-def check_angular(c, match, search, keyword, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    path = ""
-    title = ""
-    if Angular.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    try:
-        html = get_http_html(match)
-        if not html:
-            return return_dict
-
-        soup = BeautifulSoup(html, features="html.parser")
-
-        for src in soup.find_all('script', {"src": True}):
-            src_value = src.get('src', '')
-            if 'main' in src_value:
-                path = src_value
-                break
-
-        title_tag = soup.find('title')
-        if title_tag and title_tag.contents:
-            title = title_tag.contents[0].strip()
-
-        if path or title:
-            device = Angular(search=search, ip=ip, port=port, title=title, path=path)
-            device.save()
-
-            base_url = build_service_url(match)
-            full_path = base_url + (path if path.startswith('/') else ('/' + path if path else ''))
-            return_dict[c] = {"ip": ip, "port": port, 'title': title, 'path': full_path}
-    except Exception as exc:
-        logger.debug("Failed to parse Angular app for %s: %s", ip, exc)
-
-    return return_dict
-
-
-@app.task
-def check_elastic(c, match, search, keyword, config, active_probe=False):
-    return_dict = {}
-    indices_list = []
-    indicators = []
-    bytes_size = 0
-
-    ip, port = extract_ip_port(match)
-
-    if Elastic.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    elastic_payload = match.get('elastic') or parse_json_payload(match.get('data')) or {}
-    if isinstance(elastic_payload, str):
-        elastic_payload = parse_json_payload(elastic_payload) or {}
-
-    http_payload = parse_json_payload(get_http_html(match))
-    if not elastic_payload and http_payload:
-        elastic_payload = http_payload
-
-    def probe_elastic(ip, port):
-        """Best-effort probe to fetch cluster info/indices if Shodan data is sparse."""
-        base_url = f"http://{ip}:{port}"
-        try:
-            health = requests.get(f"{base_url}/_cluster/health", timeout=5)
-            if health.ok:
-                hp = health.json()
-                name = hp.get("cluster_name") or hp.get("cluster_name_inferred")
-            else:
-                name = None
-        except Exception:
-            name = None
-
-        indices_payload = None
-        try:
-            resp = requests.get(f"{base_url}/_cat/indices?format=json&bytes=b", timeout=8)
-            if resp.ok:
-                indices_payload = resp.json()
-        except Exception:
-            indices_payload = None
-
-        return name, indices_payload
-
-    cluster_name = elastic_payload.get('cluster_name') or elastic_payload.get('name') if isinstance(elastic_payload, dict) else None
-
-    if isinstance(elastic_payload, dict):
-        indices = elastic_payload.get('indices', [])
-        if isinstance(indices, dict):
-            indices = indices.values()
-
-        for indice in indices or []:
-            if isinstance(indice, dict):
-                index_name = indice.get('index_name') or indice.get('index') or indice.get('name')
-                size_in_bytes = indice.get('size_in_bytes') or indice.get('store.size_in.bytes') or 0
-            else:
-                index_name = str(indice)
-                size_in_bytes = 0
-
-            if index_name:
-                indices_list.append(index_name)
-                if keyword and keyword.lower() in index_name.lower():
-                    indicators.append(index_name)
-
-            if isinstance(size_in_bytes, (int, float)):
-                bytes_size += size_in_bytes
-
-    # If we still have no indices/size, optionally try a lightweight probe against the node.
-    if active_probe and not indices_list:
-        probed_name, probed_indices = probe_elastic(ip, port)
-        if probed_name and not cluster_name:
-            cluster_name = probed_name
-        if isinstance(probed_indices, list):
-            for indice in probed_indices:
-                if not isinstance(indice, dict):
-                    continue
-                index_name = indice.get('index') or indice.get('index_name') or indice.get('id')
-                size_in_bytes = indice.get('store.size') or indice.get('store.size_in_bytes') or indice.get('pri.store.size') or indice.get('docs') or 0
-                if index_name:
-                    indices_list.append(index_name)
-                    if keyword and keyword.lower() in index_name.lower():
-                        indicators.append(index_name)
-                try:
-                    bytes_size += int(size_in_bytes)
-                except Exception:
-                    continue
-
-    if not cluster_name:
-        http_title = (match.get('http') or {}).get('title')
-        cluster_name = http_title or "Unknown"
-
-    new_size = size(bytes_size) if bytes_size else "0B"
-
-    device = Elastic(search=search, name=cluster_name, ip=ip, port=port, size=new_size, indices=indices_list,
-                     indicator=indicators)
-    device.save()
-    return_dict[c] = {"name": cluster_name, "ip": ip, "port": port, 'size': new_size, "indice": indices_list}
-
-    return return_dict
-
-
-def check_opensearch(c, match, search, keyword, config, active_probe=False):
-    # Reuse elastic parsing patterns for OpenSearch
-    return check_elastic(c, match, search, keyword, config, active_probe=active_probe)
-
-
-def check_grafana(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if Grafana.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    url = build_service_url(match)
-    title = (match.get('http') or {}).get('title') or ""
-
-    device = Grafana(search=search, ip=ip, port=port, url=url, title=title)
-    device.save()
-    return_dict[c] = {"url": url, "ip": ip, "port": port, "title": title}
-    return return_dict
-
-
-def check_prometheus(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if Prometheus.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    url = build_service_url(match)
-    title = (match.get('http') or {}).get('title') or ""
-
-    device = Prometheus(search=search, ip=ip, port=port, url=url, title=title)
-    device.save()
-    return_dict[c] = {"url": url, "ip": ip, "port": port, "title": title}
-    return return_dict
-
-
-def check_minio(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if Minio.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    url = build_service_url(match)
-    title = (match.get('http') or {}).get('title') or ""
-    buckets = []
-
-    html_code = get_http_html(match)
-    if html_code:
-        try:
-            soup = BeautifulSoup(html_code, features="html.parser")
-            for tag in soup.find_all("a", href=True):
-                text = tag.get_text().strip()
-                href = tag.get('href', '')
-                if "bucket" in href.lower() or "bucket" in text.lower():
-                    buckets.append(text or href)
-        except Exception:
-            pass
-
-    device = Minio(search=search, ip=ip, port=port, url=url, title=title, buckets=buckets)
-    device.save()
-    return_dict[c] = {"url": url, "ip": ip, "port": port, "title": title, "buckets": buckets}
-    return return_dict
-
-
-def check_swagger(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if Swagger.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    url = build_service_url(match)
-    title = (match.get('http') or {}).get('title') or ""
-
-    device = Swagger(search=search, ip=ip, port=port, url=url, title=title)
-    device.save()
-    return_dict[c] = {"url": url, "ip": ip, "port": port, "title": title}
-    return return_dict
-
-
-def check_mongoexpress(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if MongoExpress.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    url = build_service_url(match)
-    title = (match.get('http') or {}).get('title') or ""
-
-    device = MongoExpress(search=search, ip=ip, port=port, url=url, title=title)
-    device.save()
-    return_dict[c] = {"url": url, "ip": ip, "port": port, "title": title}
-    return return_dict
-
-
-def check_nexus(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if is_blacklisted(ip, config):
-        return return_dict
-
-    existing = Nexus.objects.filter(ip=ip).first()
-    if existing:
-        return_dict[c] = {"url": existing.url, "ip": existing.ip, "port": existing.port,
-                          "title": existing.title, "version": existing.version}
-        return return_dict
-
-    url = build_service_url(match)
-    title = (match.get('http') or {}).get('title') or ""
-    version = (match.get('http') or {}).get('server') or ""
-    device = Nexus(search=search, ip=ip, port=port, url=url, title=title, version=version, product="nexus")
-    device.save()
-    return_dict[c] = {"url": url, "ip": ip, "port": port, "title": title, "version": version}
-    return return_dict
-
-
-def check_artifactory(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if is_blacklisted(ip, config):
-        return return_dict
-
-    existing = Artifactory.objects.filter(ip=ip).first()
-    if existing:
-        return_dict[c] = {"url": existing.url, "ip": existing.ip, "port": existing.port,
-                          "title": existing.title, "version": existing.version}
-        return return_dict
-
-    url = build_service_url(match)
-    title = (match.get('http') or {}).get('title') or ""
-    server_hdr = (match.get('http') or {}).get('server') or ""
-    device = Artifactory(search=search, ip=ip, port=port, url=url, title=title, version=server_hdr, product="artifactory")
-    device.save()
-    return_dict[c] = {"url": url, "ip": ip, "port": port, "title": title, "version": server_hdr}
-    return return_dict
-
-
-def check_registry(c, match, search, config):
-    return_dict = {}
-    ip, port = extract_ip_port(match)
-    if is_blacklisted(ip, config):
-        return return_dict
-
-    existing = Registry.objects.filter(ip=ip, port=port).first()
-    if existing:
-        return_dict[c] = {
-            "url": existing.url,
-            "ip": existing.ip,
-            "port": existing.port,
-            "title": existing.title,
-            "version": existing.version,
-            "product": existing.product,
-        }
-        return return_dict
-
-    url = build_service_url(match)
-    http_info = match.get("http") or {}
-    title = http_info.get('title') or ""
-    server_hdr = http_info.get('server') or ""
-    html = get_http_html(match) or ""
-    product = "harbor" if "harbor" in (title + " " + html).lower() else "registry"
-    if match.get("type") == "dockerapi":
-        product = "dockerapi"
-    elif match.get("type") == "harbor":
-        product = "harbor"
-
-    device = Registry(
-        search=search,
-        ip=ip,
-        port=port,
-        url=url,
-        title=title,
-        version=server_hdr,
-        product=product,
-        is_harbor=product == "harbor",
-    )
-    device.save()
-    return_dict[c] = {"url": url, "ip": ip, "port": port, "title": title, "version": server_hdr, "product": product}
-    return return_dict
-
-def getContext(list_matches, content, include_delimiter=0, context_delimiter_str="\n"):
-    '''
-    Parse Input
-    list_matches:       list of tuple (link, start_index, end_index)
-    content:            content to search for the context
-    include_delimiter   Set 1 to include delimiter in context
-    '''
-    items = []
-    for m in list_matches:
-        match_str = m[0]
-        match_start = m[1]
-        match_end = m[2]
-        context_start_index = match_start
-        context_end_index = match_end
-        delimiter_len = len(context_delimiter_str)
-        content_max_index = len(content) - 1
-
-        while content[context_start_index] != context_delimiter_str and context_start_index > 0:
-            context_start_index = context_start_index - 1
-
-        while content[context_end_index] != context_delimiter_str and context_end_index < content_max_index:
-            context_end_index = context_end_index + 1
-
-        if include_delimiter:
-            context = content[context_start_index: context_end_index]
-        else:
-            context = content[context_start_index + delimiter_len: context_end_index]
-
-        item = {
-            "link": match_str,
-            "context": context
-        }
-        items.append(item)
-
-    return items
-
-
-def check_gitlab(c, match, search, config):
-    return_dict = {}
-
-    ip, port = extract_ip_port(match)
-
-    if Gitlab.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    url = build_service_url(match)
-    device = Gitlab(search=search, url=url, ip=ip, port=port)
-    device.save()
-
-    return_dict[c] = {"url": url, "ip": ip, "port": port}
-
-    return return_dict
-
-
-def parse_bucket(link):
-    parsed = urlparse(link)
-    if parsed.hostname in buckets_all:
-        path_splitted = parsed.path.split("/")
-        return urlparse(link).hostname + "/" + path_splitted[1]
-    else:
-        return urlparse(link).hostname
-
-def check_keys(c, match, search, config):
-    return_dict = {}
-
-    ip, port = extract_ip_port(match)
-    title = (match.get('http') or {}).get('title', '')
-
-    if Keys.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    device = Keys(search=search, ip=ip, port=port, title=title)
-    device.save()
-
-    return_dict[c] = {"ip": ip, "port": port, 'title': title}
-
-    return return_dict
-
-def shannon_entropy(data, iterator):
-    """
-    Borrowed from http://blog.dkbza.org/2007/05/scanning-data-for-entropy-anomalies.html
-    """
-    if not data:
-        return 0
-    entropy = 0
-    for x in iterator:
-        p_x = float(data.count(x))/len(data)
-        if p_x > 0:
-            entropy += - p_x*math.log(p_x, 2)
-    return entropy
-
-
-def check_amazonbe(c, match, search, config):
-    return_dict = {}
-
-    ip, port = extract_ip_port(match)
-    buckets = set()
-
-    if Amazonbe.objects.filter(ip=ip).exists() or is_blacklisted(ip, config):
-        return return_dict
-
-    banner = get_http_html(match) or match.get('data', '')
-
-    try:
-        soup = BeautifulSoup(str(banner), "html.parser")
-
-        for tag in soup.find_all(href=True):
-            href = tag.get('href', '')
-            if "amazonaws.com" in href:
-                buckets.add(parse_bucket(href))
-
-        for tag in soup.find_all("script", {"src": True}):
-            src = tag.get('src', '')
-            if "amazonaws.com" in src:
-                buckets.add(parse_bucket(src))
-
-        for tag in soup.find_all("img", {"src": True}):
-            src = tag.get('src', '')
-            if "amazonaws.com" in src:
-                buckets.add(parse_bucket(src))
-
-        meta = soup.find("meta", property="og:image")
-        if meta and "amazonaws.com" in meta.get('content', ''):
-            buckets.add(parse_bucket(meta['content']))
-    except Exception as exc:
-        logger.debug("Failed to parse Amazon references for %s: %s", ip, exc)
-
-    if buckets:
-        device = Amazonbe(search=search, ip=ip, port=port, buckets=list(buckets))
-        device.save()
-        return_dict[c] = {"ip": ip, "port": port, 'buckets': list(buckets)}
-
-    return return_dict
-
 
 @shared_task(bind=True)
 def brute_buckets(self, keyword, active_probe=False):
     if not active_probe:
         # Skip network probing when disabled.
-        self.update_state(
+        publish_state(self,
             state="SUCCESS",
             meta={
                 "type": "amazon",
@@ -4208,7 +765,7 @@ def brute_buckets(self, keyword, active_probe=False):
     for c,i in enumerate(buckets_bruteforce):
 
 
-        req = requests.get("https://" + keyword + i.rstrip() + ".s3.amazonaws.com", verify=False)
+        req = requests.get("https://" + keyword + i.rstrip() + ".s3.amazonaws.com", timeout=(5, 15))
 
 
         if req.status_code == 200 or req.status_code == 403:
@@ -4217,109 +774,20 @@ def brute_buckets(self, keyword, active_probe=False):
 
         progress_recorder.set_progress(c+1, total=total)
 
-        self.update_state(state="PROGRESS",
+        publish_state(self, state="PROGRESS",
                           meta={"results": "https://" + keyword + i.rstrip() + ".s3.amazonaws.com",
                                 "code": req.status_code, "percentage": c / total * 100})
 
-    self.update_state(state="SUCCESS",
+    publish_state(self, state="SUCCESS",
                       meta={"type": 'amazon', "total": total})
 
     raise Ignore()
 
-def clone_git_repo(git_url):
-    try:
-        project_path = tempfile.mkdtemp()
-        Repo.clone_from(git_url, project_path)
-        return project_path
-    except Exception as e:
-        print(e.args)
-
-def get_strings_of_set(word, char_set, threshold=20):
-    count = 0
-    letters = ""
-    strings = []
-    for char in word:
-        if char in char_set:
-            letters += char
-            count += 1
-        else:
-            if count > threshold:
-                strings.append(letters)
-            letters = ""
-            count = 0
-    if count > threshold:
-        strings.append(letters)
-    return strings
-
-def get_secrets(diff, branch_name,prev_commit):
-    stringsFound = set()
-    paths = []
-    path_secrets = {'path':[], 'secrets':[]}
-
-    for blob in diff: # for every text in diff
-        text = blob.diff.decode('utf-8', errors='replace') # extract text from blob
-        # extract path from blob, sometimes it's a_path, sometimes it's b_path.
-        path = blob.b_path if blob.b_path else blob.a_path
-
-        if any(x in path for x in exclude):
-            pass
-        else:
-
-            for line in text.split('\n'): # for every line in diff's blob
-                for word in line.split():
-                    base64_strings = get_strings_of_set(word, BASE64_CHARS) # check if string contains characters from base64 char set
-                    hex_strings = get_strings_of_set(word, HEX_CHARS) # check if string contains character from hex char set
-                    for string in base64_strings: # if any string was found
-                        b64Entropy = shannon_entropy(string, BASE64_CHARS) # calculate entropy
-                        if b64Entropy > 4.5:
-                            stringsFound.add(string)
-                            path_secrets['path'].append(path)# add string to list
-                            path_secrets['secrets'].append(string)
-                            # text = text.replace(string,colors.WARNING + string + bcolors.ENDC) # it is raw whole commit text
-                    for string in hex_strings:
-                        hexEntropy = shannon_entropy(string, HEX_CHARS)
-                        if hexEntropy > 3:
-                            stringsFound.add(string)
-                            path_secrets['path'].append(path)
-                            path_secrets['secrets'].append((string))
-                            # text = text.replace(string,bcolors.WARNING + string + bcolors.ENDC)
-
-    return path_secrets
-
-def rules(diff):
-
-    path_secrets = {'path':[], 'secrets':[]}
-    with open('rules.json', "r") as ruleFile:
-        rules = json.loads(ruleFile.read())
-        for rule in rules:
-            rules[rule] = re.compile(rules[rule])
-
-        regex_matches = []
-
-        for blob in diff:
-            path = blob.b_path if blob.b_path else blob.a_path
-            if any(x in path for x in exclude):
-                pass
-            else:
-                for key in rules:
-                    try:
-                        text = blob.diff.decode('utf-8', errors='replace')
-                        found_strings = rules[key].findall(text)
-                        if len(found_strings) > 0:
-                            for i in found_strings:
-                                path_secrets['secrets'].append(i)
-
-
-                            path_secrets['path'].append(path)
-                    except:
-                        pass
-
-    return path_secrets
 
 @shared_task(bind=True)
 def javascript_search(self, keyword, active_probe=False):
     if not active_probe:
-        self.update_state(
+        publish_state(self,
             state="SUCCESS",
             meta={
                 "type": "js",
@@ -4344,7 +812,7 @@ def javascript_search(self, keyword, active_probe=False):
     js = Javascript(secrets=links, context=context, path=keyword)
     js.save()
 
-    self.update_state(state="SUCCESS",
+    publish_state(self, state="SUCCESS",
                       meta={"type": 'js', "secrets": links, 'context':context,'path':keyword})
 
     raise Ignore()
@@ -4353,7 +821,7 @@ def javascript_search(self, keyword, active_probe=False):
 @shared_task(bind=True)
 def github_repo_search(self, keyword, active_probe=False):
     if not active_probe:
-        self.update_state(
+        publish_state(self,
             state="SUCCESS",
             meta={
                 "type": "github_repo",
@@ -4368,7 +836,7 @@ def github_repo_search(self, keyword, active_probe=False):
     progress_recorder = ProgressRecorder(self)
     project_path = clone_git_repo(keyword)  # cloning repo
     repo_git = Repo(project_path)
-    branches = repo_git.remotes.origin.fetch()
+    branches = repo_git.remotes.origin.fetch(kill_after_timeout=60)
     checked = set()  # set for already checked elements
     total2= len(list(repo_git.iter_commits('HEAD')))
     results = {}
@@ -4382,7 +850,7 @@ def github_repo_search(self, keyword, active_probe=False):
             percent = round(c / total2 * 100, 2)
 
             progress_recorder.set_progress(c + 1, total=total2)
-            self.update_state(state="PROGRESS",
+            publish_state(self, state="PROGRESS",
                               meta={"commit": str(current_commit), "percent": percent})
             # print("Searching in commit: " + str(current_commit))
             diff_hash = hashlib.md5((str(previous_commit) + str(current_commit)).encode(
@@ -4431,7 +899,19 @@ def github_repo_search(self, keyword, active_probe=False):
 
             previous_commit = current_commit
 
-    self.update_state(state="SUCCESS",
+    publish_state(self, state="SUCCESS",
                       meta={"type": 'github', "results":results})
 
     raise Ignore()
+
+
+@app.task(name="leakscope.tasks.cleanup_exports")
+def cleanup_exports():
+    from leakscope.exporters.storage import cleanup_expired_exports
+    return {'removed': cleanup_expired_exports()}
+
+
+@app.task(name="leakscope.tasks.restore_database", soft_time_limit=3300, time_limit=3600)
+def restore_database(name, original=""):
+    from leakscope import database_archive
+    return database_archive.run_import(name, original)

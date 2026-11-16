@@ -1,0 +1,10 @@
+ARG LEAKSCOPE_APP_BASE=leakscope:4.7.3-discovery-output-20261109-r2
+FROM ${LEAKSCOPE_APP_BASE}
+USER 0
+COPY leakscope_app/static /app/leakscope_app/static
+COPY leakscope_app/templates /app/leakscope_app/templates
+RUN LEAKSCOPE_SECRET_KEY=static-build-only LEAKSCOPE_CONFIG_FILE=/nonexistent \
+    LEAKSCOPE_DATA_DIR=/tmp/leakscope-frontend-static \
+    python manage.py collectstatic --clear --noinput \
+    && rm -rf /tmp/leakscope-frontend-static
+USER 501:20

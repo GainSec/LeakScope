@@ -1,0 +1,15 @@
+{
+  "name": "leakscope-browser-checks",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/browser/ui-utils.test.cjs tests/browser/render-smoke.test.cjs tests/browser/intelligence.test.cjs tests/browser/operations.test.cjs",
+    "test:browser": "node tests/browser/smoke-live.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "31.0.0",
+    "playwright": "1.65.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

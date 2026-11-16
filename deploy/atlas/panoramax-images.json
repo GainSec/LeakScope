@@ -1,0 +1,42 @@
+{
+  "verified_at": "2026-11-10T05:35:50.237132+00:00",
+  "api": {
+    "image": "panoramax/api:2.17.0@sha256:dca7ee0df50c0409c1c6363533ed25e7f385e2c2f095963d9238c33af02fe5dd",
+    "platform": "linux/amd64",
+    "compressed_size_bytes": 329772052,
+    "tag_metadata": "https://hub.docker.com/v2/repositories/panoramax/api/tags/2.17.0"
+  },
+  "database": {
+    "image": "postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5",
+    "platform": "linux/amd64",
+    "compressed_size_bytes": 212616258,
+    "tag_metadata": "https://hub.docker.com/v2/repositories/postgis/postgis/tags/16-3.4"
+  },
+  "sources": [
+    "https://docs.panoramax.fr/backend/install/install/",
+    "https://docs.panoramax.fr/backend/install/settings/",
+    "https://docs.panoramax.fr/backend/install/cli/",
+    "https://gitlab.com/panoramax/server/api/-/raw/develop/docker-compose.yml",
+    "https://gitlab.com/panoramax/server/api/-/raw/develop/docker/docker-entrypoint.sh"
+  ],
+  "notes": [
+    "Official images currently provide linux/amd64; Docker Desktop on Apple Silicon uses emulation.",
+    "DB_MIN_CNX and DB_MAX_CNX are the documented settings; upstream sample BD_MIN_CNX spelling is not used.",
+    "api command serves internal HTTP; ssl-api would force HTTPS picture links and is intentionally not used.",
+    "No image/photograph dataset is installed or fetched by starting this private companion.",
+    "Dedicated Linux-managed PostgreSQL storage avoids first-start owner mapping failures reproduced on Docker Desktop external macOS bind mounts. Back up with pg_dump and the separate picture folder."
+  ],
+  "storage": {
+    "database": {
+      "type": "compose_named_volume",
+      "key": "panoramax-db",
+      "project_scoped": true,
+      "user": "999:999"
+    },
+    "pictures": {
+      "type": "bind",
+      "path": "${LEAKSCOPE_DATA_ROOT}/artifacts/atlas/panoramax/pictures",
+      "user": "${LEAKSCOPE_UID:-501}:${LEAKSCOPE_GID:-20}"
+    }
+  }
+}

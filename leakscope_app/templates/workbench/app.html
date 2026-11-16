@@ -1,0 +1,82 @@
+{% load static workspace_assets %}<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#070c15">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>LeakScope · Private workbench</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="{% static 'img/leakscope-favicon-32.png' %}">
+  <link rel="icon" type="image/png" sizes="64x64" href="{% static 'img/leakscope-favicon.png' %}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{% static 'img/leakscope-apple-touch.png' %}">
+  {% workspace_assets 'css' as workspace_styles %}{% for asset in workspace_styles %}
+  <link rel="stylesheet" href="{% static asset %}">
+  {% endfor %}
+  {% if page == 'geography' %}
+  <link rel="stylesheet" href="{% static 'vendor/maplibre/maplibre-gl.css' %}">
+  <link rel="stylesheet" href="{% static 'vendor/panorama/viewer.css' %}">
+  <script defer src="{% static 'vendor/maplibre/maplibre-gl.js' %}"></script>
+  <script defer src="{% static 'vendor/panorama/viewer.js' %}"></script>
+  {% endif %}
+  {% workspace_assets 'js' as workspace_scripts %}{% for asset in workspace_scripts %}
+  <script defer src="{% static asset %}"></script>
+  {% endfor %}
+</head>
+<body data-page="{{ page|default:'overview' }}" data-type="{{ type|default:'' }}" data-target-id="{{ target_id|default:'' }}" data-countries="{% static 'maps/countries.geojson' %}">
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="/" aria-label="LeakScope overview"><img class="brand-banner" src="{% static 'img/leakscope-baner.png' %}" width="768" height="353" alt="LeakScope" decoding="async" fetchpriority="high"><img class="brand-compact" src="{% static 'img/leakscope-favicon.png' %}" width="64" height="64" alt="" aria-hidden="true" decoding="async"><span class="brand-word" aria-hidden="true">LeakScope</span></a>
+    <button class="command-toggle" id="command-toggle" type="button" aria-label="Search pages and navigation"><span aria-hidden="true">⌕</span><span class="command-label nav-title">Jump to…</span><kbd>⌘ K</kbd></button>
+    <nav class="navigation nav-home" aria-label="Home">
+      <a href="/" data-nav="overview"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Home</span></a>
+    </nav>
+    <details class="nav-group" data-nav-group="find" open><summary aria-label="Find navigation">Find</summary><nav class="navigation" aria-label="Find">
+      <a href="/discover/" data-nav="discover"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Discover</span></a>
+      <a href="/cloud/" data-nav="cloud"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Cloud discovery</span></a>
+      <a href="/domain-expansion/" data-nav="domain-expansion"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Domain expansion</span></a>
+      <a href="/custom-queries/" data-nav="queries"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Custom queries</span></a>
+    </nav></details>
+    <details class="nav-group" data-nav-group="evidence" open><summary aria-label="Evidence navigation">Evidence</summary><nav class="navigation" aria-label="Evidence">
+      <a href="/assets/" data-nav="assets"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Observations</span></a>
+      <a href="/technology-dashboard/" data-nav="technologies"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Technologies</span></a>
+      <a href="/screenshots/" data-nav="screenshots"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Screenshots</span></a>
+      <a href="/geography/" data-nav="geography"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Geography</span></a>
+      <a href="/certificates/" data-nav="certificates"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Certificates</span></a>
+      <a href="/findings/" data-nav="findings"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Findings</span></a>
+    </nav></details>
+    <details class="nav-group" data-nav-group="scope" open><summary aria-label="Scope navigation">Scope</summary><nav class="navigation" aria-label="Scope">
+      <a href="/organizations/" data-nav="organizations"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Organizations</span></a>
+      <a href="/relationships/" data-nav="relationships"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Relationships</span></a>
+      <a href="/domain-coverage/" data-nav="domain-coverage"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Domain coverage</span></a>
+      <a href="/correlations/" data-nav="correlations"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Correlations</span></a>
+    </nav></details>
+    <details class="nav-group" data-nav-group="watch" open><summary aria-label="Watch navigation">Watch</summary><nav class="navigation" aria-label="Watch">
+      <a href="/changes/" data-nav="changes"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">What changed</span></a>
+      <a href="/monitoring/" data-nav="monitoring"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Monitoring</span></a>
+      <a href="/lookups/" data-nav="lookups"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Scheduled lookups</span></a>
+      <a href="/runs/" data-nav="runs"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Runs</span></a>
+    </nav></details>
+    <details class="nav-group" data-nav-group="automate" open><summary aria-label="Automate navigation">Automate</summary><nav class="navigation" aria-label="Automate">
+      <a href="/build/" data-nav="build"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Build</span></a>
+    </nav></details>
+    <details class="nav-group" data-nav-group="tools"><summary aria-label="Tools navigation">Tools</summary><nav class="navigation" aria-label="Tools">
+      <a href="/preview/" data-nav="preview"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Inspect a target</span></a>
+      <a href="/technologies/" data-nav="catalog"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Service catalog</span></a>
+      <a href="/research/" data-nav="research"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Research</span></a>
+      <a href="/analysis/" data-nav="analysis"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Analysis</span></a>
+      <a href="/export-import/" data-nav="exports"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Export &amp; import</span></a>
+    </nav></details>
+    <div id="command-extra" hidden><a href="/explore/">Explore</a><a href="/technologies/#technology-signatures">Technology signatures</a></div>
+    <div class="sidebar-bottom"><a class="settings-link" href="/settings/" data-nav="settings"><span class="nav-icon" aria-hidden="true"></span><span class="nav-title">Settings</span></a><button class="nav-compact-toggle" id="nav-compact-toggle" type="button" aria-expanded="true" aria-label="Collapse to icons"><span aria-hidden="true">⇤</span><span class="nav-title">Collapse to icons</span></button></div>
+  </aside>
+  <div class="main-shell">
+    <header class="topbar"><div class="topbar-start"><button class="icon-button mobile-toggle" id="menu-toggle" aria-label="Toggle navigation" aria-expanded="false">☰</button><span class="breadcrumb"><span id="breadcrumb-group">Workspace</span> <span aria-hidden="true">/</span> <strong id="breadcrumb-page">Home</strong></span></div><div class="topbar-right"><span id="workspace-activity"></span><details id="status-menu" class="status-menu"><summary><span class="status-dot" aria-hidden="true"></span> Status</summary><div class="status-menu-body"><span class="private-pill"><span class="status-dot"></span> Private network</span><a class="help-link" href="/settings/" aria-label="View system health">System health <span aria-hidden="true">↗</span></a><button id="activity-logs-toggle" class="motion-toggle activity-logs-toggle" type="button" aria-pressed="false" aria-label="Toggle job activity logs">Activity logs off</button><button id="motion-toggle" class="motion-toggle" type="button" aria-pressed="true" aria-label="Toggle ambient motion"><span aria-hidden="true">✧</span></button></div></details></div></header>
+    <main id="main" tabindex="-1">{% if page == 'preview' or page == 'explore' %}<nav class="page-tabs" aria-label="Inspect a target"><a href="/preview/"{% if page == 'preview' %} aria-current="page"{% endif %}>Preview</a><a href="/explore/"{% if page == 'explore' %} aria-current="page"{% endif %}>Explore</a></nav>{% endif %}<div id="page-root" aria-busy="true"><div class="initial-loading"><span class="spinner"></span> Loading workbench…</div></div><noscript><div class="notice notice-error">Enable JavaScript to use the workbench. All application scripts are served locally.</div></noscript></main>
+    <footer class="page-footer"><span class="made-by">Made by <a href="https://gainsec.com/" target="_blank" rel="noopener noreferrer">Jon &ldquo;GainSec&rdquo; Gaines</a><a class="made-by-logo" href="https://gainsec.com/" target="_blank" rel="noopener noreferrer" aria-label="GainSec"><img src="{% static 'img/gainsec-white-transparent.png' %}" width="1402" height="527" alt="GainSec" loading="lazy" decoding="async"></a></span><span>Evidence from provider data and explicit inspections{% if page == 'technologies' or page == 'screenshots' or page == 'geography' %} · <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">IP Geolocation by DB-IP</a>{% endif %}</span></footer>
+  </div>
+</div>
+<dialog id="workspace-commands" class="workspace-commands" aria-labelledby="command-title"><div class="dialog-heading"><h2 id="command-title">Jump to a workspace</h2><button type="button" class="icon-button" data-close-command aria-label="Close navigation search">×</button></div><label class="visually-hidden" for="command-search">Search pages</label><input id="command-search" class="input command-search" type="search" placeholder="Search pages…" autocomplete="off"><div id="command-results" class="command-results"></div><p id="command-empty" class="muted small" hidden>No pages match this search.</p><p class="command-hint">↑ ↓ to choose · Enter to open · Esc to close</p></dialog>
+<div id="toast-root" class="toast-root" role="status" aria-live="polite"></div>
+<dialog id="run-dialog" class="run-dialog" aria-labelledby="run-dialog-title"><div class="dialog-heading"><div><span class="eyebrow">BACKGROUND JOB</span><h2 id="run-dialog-title">Run progress</h2></div><button type="button" class="icon-button" id="close-run-dialog" aria-label="Close run progress">×</button></div><div id="run-dialog-body"></div></dialog>
+</body></html>

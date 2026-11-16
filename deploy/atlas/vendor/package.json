@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@photo-sphere-viewer/core": "5.15.1",
+    "esbuild": "0.28.2",
+    "maplibre-gl": "6.17.0"
+  }
+}

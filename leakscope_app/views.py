@@ -1,3 +1,6 @@
+from django.conf import settings
+from leakscope.services.identity import fingerprint as canonical_fingerprint, parse_list, is_hidden, set_hidden
+from leakscope.services.registry import model_for_type, canonical_type, service_types
 from django.shortcuts import render
 import os
 import socket
@@ -42,8 +45,8 @@ def _normalize_terms(value):
 
 
 def _fingerprint(type_name, ip, port):
-    raw = f"{(type_name or '').lower()}|{ip or ''}|{port or ''}"
-    return hashlib.sha256(raw.encode()).hexdigest()
+    return canonical_fingerprint(type_name, ip, port)
+
 
 def _get_private_ip():
     try:
@@ -73,7 +76,7 @@ def index(request):
     for_later_context = {}
     open_stats = []
 
-    app_models = apps.get_app_config('leakscope_app').get_models()
+    app_models = list(apps.get_app_config('leakscope_app').get_models())
     for i in app_models:
         field_names = {f.name for f in i._meta.fields}
         if 'for_later' not in field_names or 'confirmed' not in field_names:
@@ -87,7 +90,7 @@ def index(request):
         except Exception as e:
             print(e)
 
-    random_model = random.choice(labels)
+    random_model = random.choice(labels) if labels else "Keys"
     model = apps.get_model('leakscope_app', random_model)
     random_leaks = model.objects.filter(confirmed=False,for_later=False)
     try:
@@ -212,92 +215,16 @@ def stats(request, type=None):
 
 
 def stats_db(request, type=None):
-    model_map = {
-        "angular": Angular,
-        "amazons3be": Amazons3be,
-        "amazonbe": Amazonbe,
-        "amazonbuckets": AmazonBuckets,
-        "gitlab": Gitlab,
-        "elastic": Elastic,
-        "dirs": Dirs,
-        "jenkins": Jenkins,
-        "mongo": Mongo,
-        "rsync": Rsync,
-        "sonarqube": Sonarqube,
-        "couchdb": Couchdb,
-        "kibana": Kibana,
-        "cassandra": Cassandra,
-        "rethink": Rethink,
-        "ftp": Ftp,
-        "opensearch": OpenSearch,
-        "grafana": Grafana,
-        "prometheus": Prometheus,
-        "minio": Minio,
-        "swagger": Swagger,
-        "mongoexpress": MongoExpress,
-        "keys": Keys,
-        "javascript": Javascript,
-        "github": Github,
-        "nexus": Nexus,
-        "artifactory": Artifactory,
-        "registry": Registry,
-        "harbor": Registry,
-        "dockerapi": Registry,
-        "etcd": Etcd,
-        "consul": ConsulKV,
-        "rabbitmq": Rabbitmq,
-        "solr": Solr,
-        "gitea": Gitea,
-        "gogs": Gogs,
-        "azureblob": AzureBlob,
-        "gcsbucket": GcsBucket,
-    }
+    model_map = {spec["key"]: spec["model"] for spec in service_types()}
+    model_map.update({alias: spec["model"] for spec in service_types() for alias in spec["aliases"]})
     Model = model_map.get((type or "").lower())
     count = Model.objects.count() if Model else 0
     return HttpResponse(json.dumps({"stat": count}), content_type='application/json')
 
 
 def browse(request, type=None):
-    model_map = {
-        "angular": Angular,
-        "amazons3be": Amazons3be,
-        "amazonbe": Amazonbe,
-        "amazonbuckets": AmazonBuckets,
-        "gitlab": Gitlab,
-        "elastic": Elastic,
-        "dirs": Dirs,
-        "jenkins": Jenkins,
-        "mongo": Mongo,
-        "rsync": Rsync,
-        "sonarqube": Sonarqube,
-        "couchdb": Couchdb,
-        "kibana": Kibana,
-        "cassandra": Cassandra,
-        "rethink": Rethink,
-        "ftp": Ftp,
-        "opensearch": OpenSearch,
-        "grafana": Grafana,
-        "prometheus": Prometheus,
-        "minio": Minio,
-        "swagger": Swagger,
-        "mongoexpress": MongoExpress,
-        "keys": Keys,
-        "javascript": Javascript,
-        "github": Github,
-        "nexus": Nexus,
-        "artifactory": Artifactory,
-        "registry": Registry,
-        "harbor": Registry,
-        "dockerapi": Registry,
-        "etcd": Etcd,
-        "consul": ConsulKV,
-        "rabbitmq": Rabbitmq,
-        "solr": Solr,
-        "gitea": Gitea,
-        "gogs": Gogs,
-        "azureblob": AzureBlob,
-        "gcsbucket": GcsBucket,
-    }
+    model_map = {spec["key"]: spec["model"] for spec in service_types()}
+    model_map.update({alias: spec["model"] for spec in service_types() for alias in spec["aliases"]})
     Model = model_map.get((type or "").lower())
     if not Model:
         return HttpResponse("Unsupported type", status=400)
@@ -307,29 +234,18 @@ def browse(request, type=None):
         objs = Model.objects.all()
     return render(request, 'browse.html', {'type': type, 'all': objs})
 def database(request):
-    status_map = {fp.fingerprint: fp.status for fp in FingerprintLog.objects.all()}
-    hidden_entries = []
-    results = []
-    for i in apps.get_models(include_auto_created=False, include_swapped=False):
-        if i.__name__.lower() in types:
-            objs = list(i.objects.all())
-            for obj in objs:
-                fp = _fingerprint(i.__name__, getattr(obj, "ip", ""), getattr(obj, "port", ""))
-                status = status_map.get(fp, '')
-                if status == "hidden":
-                    hidden_entries.append({
-                        "type": i.__name__,
-                        "ip": getattr(obj, "ip", ""),
-                        "port": getattr(obj, "port", ""),
-                        "keyword": getattr(getattr(obj, "search", None), "keyword", ""),
-                        "created": getattr(getattr(obj, "search", None), "created_on", ""),
-                        "provider": getattr(getattr(obj, "search", None), "provider", "shodan"),
-                    })
-                    continue
-                obj.status = status
-            results.append(objs)
+    hidden_entries=[]
+    results=[]
+    for spec in service_types():
+        visible=[]
+        for obj in spec['model'].objects.all().order_by('-pk'):
+            if is_hidden(spec['key'],obj):
+                hidden_entries.append({'type':spec['key'],'ip':getattr(obj,'ip',''),'port':getattr(obj,'port',''),'id':obj.pk})
+                continue
+            visible.append(obj)
+        results.append(visible)
+    return render(request,'database.html',{'results':results,'hidden_entries':hidden_entries})
 
-    return render(request, 'database.html', {"results": results, "hidden_entries": hidden_entries})
 
 def keyword(request):
 
@@ -340,19 +256,44 @@ def search(request,type):
 
     return render(request, 'search.html', context)
 
-def keyword_search_results(request):
-    if request.is_ajax() and request.method == 'GET':
+def _legacy_demo_forward(request, type_name=None, *, custom=False):
+    """Explicit Demo requests must not enter legacy handlers or SDK fallbacks."""
+    if request.method!='POST':return None
+    from . import workbench
+    from leakscope.phase3.usage_policy import validate_demo
+    try:
+        data=workbench._body(request)
+        from leakscope.phase3.collection_policy import validate_collection_mode
+        if 'collection_mode' in data:validate_collection_mode(data['collection_mode'],allow_custom=True)
+        demo=validate_demo(data.get('demo',False)) or data.get('collection_mode')=='demo'
+    except (ValueError,TypeError) as exc:
+        return JsonResponse({'error':str(exc)},status=400)
+    if not demo:return None
+    data.update(demo=True,collection_mode='demo',active_probe=False,page=1,page_count=1)
+    if type_name:data['type']=type_name
+    request._body=json.dumps(data).encode('utf-8')
+    request.content_type='application/json'
+    if custom:return workbench.queries(request,query_id=data.get('id'),action='run')
+    return workbench.discover(request)
 
-        keyword = request.GET['keyword']
-        exclude = request.GET.get('exclude', '')
-        country = request.GET['country']
-        network = request.GET['network']
-        type = request.GET['type']
-        page = request.GET.get('page') or "1"
-        page_count = request.GET.get('page_count') or "1"
-        provider = (request.GET.get('provider') or 'shodan').lower()
-        zoomeye_pagesize = request.GET.get('zoomeye_pagesize') or ""
-        active_probe = request.GET.get('active_probe') in {'1', 'true', 'True', 'on'}
+
+def keyword_search_results(request):
+    forwarded=_legacy_demo_forward(request)
+    if forwarded is not None:return forwarded
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest" and request.method == 'POST':
+
+        keyword = request.POST['keyword']
+        exclude = request.POST.get('exclude', '')
+        country = request.POST['country']
+        network = request.POST['network']
+        type = request.POST['type']
+        page = request.POST.get('page') or "1"
+        page_count = request.POST.get('page_count') or "1"
+        provider = (request.POST.get('provider') or 'shodan').lower()
+        zoomeye_pagesize = request.POST.get('zoomeye_pagesize') or ""
+        active_probe = request.POST.get('active_probe') in {'1', 'true', 'True', 'on'}
         search = Search(type=type, keyword=keyword,country=country,network=network, provider=provider)
         print(search.id)
 
@@ -369,15 +310,19 @@ def keyword_search_results(request):
         return HttpResponse(json.dumps({'OK2': '123123'}), content_type='application/json')
 
 def search_results(request,type):
-    if request.is_ajax() and request.method == "GET":
-        keyword = request.GET['keyword']
-        exclude = request.GET.get('exclude', '')
-        country = request.GET['country']
-        network = request.GET['network']
-        page = request.GET['page']
-        page_count = request.GET.get('page_count') or "1"
-        provider = (request.GET.get('provider') or 'shodan').lower()
-        active_probe = request.GET.get('active_probe') in {'1', 'true', 'True', 'on'}
+    forwarded=_legacy_demo_forward(request,type)
+    if forwarded is not None:return forwarded
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest" and request.method == "POST":
+        keyword = request.POST['keyword']
+        exclude = request.POST.get('exclude', '')
+        country = request.POST['country']
+        network = request.POST['network']
+        page = request.POST['page']
+        page_count = request.POST.get('page_count') or "1"
+        provider = (request.POST.get('provider') or 'shodan').lower()
+        active_probe = request.POST.get('active_probe') in {'1', 'true', 'True', 'on'}
 
         search = Search(type=type, keyword=keyword, country=country, network=network, provider=provider)
         search.save()
@@ -450,59 +395,21 @@ from django.apps import apps as django_apps
 
 
 def hide(request, type=None, ip=None):
-    model_map = {
-        "angular": Angular,
-        "amazons3be": Amazons3be,
-        "amazonbe": Amazonbe,
-        "amazonbuckets": AmazonBuckets,
-        "gitlab": Gitlab,
-        "elastic": Elastic,
-        "dirs": Dirs,
-        "jenkins": Jenkins,
-        "mongo": Mongo,
-        "rsync": Rsync,
-        "sonarqube": Sonarqube,
-        "couchdb": Couchdb,
-        "kibana": Kibana,
-        "cassandra": Cassandra,
-        "rethink": Rethink,
-        "ftp": Ftp,
-        "opensearch": OpenSearch,
-        "grafana": Grafana,
-        "prometheus": Prometheus,
-        "minio": Minio,
-        "swagger": Swagger,
-        "mongoexpress": MongoExpress,
-        "keys": Keys,
-        "javascript": Javascript,
-        "github": Github,
-        "registry": Registry,
-        "harbor": Registry,
-        "dockerapi": Registry,
-        "azureblob": AzureBlob,
-        "gcsbucket": GcsBucket,
-        "solr": Solr,
-        "gitea": Gitea,
-        "gogs": Gogs,
-        "azureblob": AzureBlob,
-        "gcsbucket": GcsBucket,
-    }
-    model = model_map.get((type or '').lower())
-    if not model or not ip:
-        return HttpResponse(json.dumps({'error': 'invalid'}), content_type='application/json', status=400)
-    try:
-        obj = model.objects.get(ip=ip)
-    except Exception as exc:
-        return HttpResponse(json.dumps({'error': str(exc)}), content_type='application/json', status=400)
-
-    port = getattr(obj, "port", "")
-    fp = _fingerprint(model.__name__, ip, port)
-    log, _ = FingerprintLog.objects.get_or_create(
-        fingerprint=fp, defaults={"type": model.__name__, "ip": ip, "port": port}
-    )
-    log.status = "hidden"
-    log.save()
-    return HttpResponse(json.dumps({'Results': 'hidden'}), content_type='application/json')
+    if request.method != 'POST':
+        return JsonResponse({'error':'POST required'},status=405)
+    model=model_for_type(type)
+    if not model:return JsonResponse({'error':'invalid type'},status=400)
+    object_id=request.POST.get('id') or request.GET.get('id')
+    if object_id:
+        obj=model.objects.filter(pk=object_id).first()
+    elif ip and any(f.name=='ip' for f in model._meta.fields):
+        candidates=list(model.objects.filter(ip=ip)[:2])
+        if len(candidates)!=1:return JsonResponse({'error':'Supply a stable finding id'},status=400)
+        obj=candidates[0]
+    else:obj=None
+    if obj is None:return JsonResponse({'error':'not found'},status=404)
+    set_hidden(type,obj,True)
+    return JsonResponse({'result':'hidden','id':obj.pk})
 
 
 # --- Legacy routes restored as light stubs to keep UI working ---
@@ -512,9 +419,11 @@ def amazonbuckets(request):
 
 
 def bruteforce_bucket(request):
-    if request.is_ajax() and request.method == "GET":
-        keyword = request.GET.get('keyword', '')
-        active_probe = _flag(request.GET.get("active_probe", False))
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest" and request.method == "POST":
+        keyword = request.POST.get('keyword', '')
+        active_probe = _flag(request.POST.get("active_probe", False))
         task_res = tasks.brute_buckets.delay(keyword=keyword, active_probe=active_probe)
         request.session['task_id'] = task_res.task_id
         return HttpResponse(json.dumps({'task_id': task_res.task_id}), content_type='application/json')
@@ -526,9 +435,11 @@ def js(request):
 
 
 def js_file(request):
-    if request.is_ajax() and request.method == "GET":
-        keyword = request.GET.get('keyword', '')
-        active_probe = _flag(request.GET.get("active_probe", False))
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest" and request.method == "POST":
+        keyword = request.POST.get('keyword', '')
+        active_probe = _flag(request.POST.get("active_probe", False))
         task_res = tasks.javascript_search.delay(keyword=keyword, active_probe=active_probe)
         request.session['task_id'] = task_res.task_id
         return HttpResponse(json.dumps({'task_id': task_res.task_id}), content_type='application/json')
@@ -540,9 +451,11 @@ def github(request):
 
 
 def github_repo(request):
-    if request.is_ajax() and request.method == "GET":
-        keyword = request.GET.get('keyword', '')
-        active_probe = _flag(request.GET.get("active_probe", False))
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest" and request.method == "POST":
+        keyword = request.POST.get('keyword', '')
+        active_probe = _flag(request.POST.get("active_probe", False))
         task_res = tasks.github_repo_search.delay(keyword=keyword, active_probe=active_probe)
         request.session['task_id'] = task_res.task_id
         return HttpResponse(json.dumps({'task_id': task_res.task_id}), content_type='application/json')
@@ -635,15 +548,17 @@ def custom_query_list(request):
 
 
 def custom_query_save(request):
-    qid = request.GET.get("id")
-    name = (request.GET.get("name") or "").strip() or "Untitled"
-    template = (request.GET.get("query_template") or "").strip()
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    qid = request.POST.get("id")
+    name = (request.POST.get("name") or "").strip() or "Untitled"
+    template = (request.POST.get("query_template") or "").strip()
     if not template:
         return JsonResponse({"error": "Query template is required"}, status=400)
-    description = request.GET.get("description", "")
-    default_type = request.GET.get("default_type", "")
-    active_probe_default = _flag(request.GET.get("active_probe_default", False))
-    provider = (request.GET.get("provider") or "shodan").lower()
+    description = request.POST.get("description", "")
+    default_type = request.POST.get("default_type", "")
+    active_probe_default = _flag(request.POST.get("active_probe_default", False))
+    provider = (request.POST.get("provider") or "shodan").lower()
     if provider not in ("shodan", "zoomeye"):
         provider = "shodan"
     if qid:
@@ -663,7 +578,9 @@ def custom_query_save(request):
 
 
 def custom_query_delete(request):
-    qid = request.GET.get("id")
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    qid = request.POST.get("id")
     if not qid:
         return JsonResponse({"error": "id required"}, status=400)
     CustomQuery.objects.filter(id=qid).delete()
@@ -688,18 +605,22 @@ def _render_custom_query(q: CustomQuery, keyword=None, country=None, network=Non
 
 
 def custom_query_run(request):
-    qid = request.GET.get("id")
+    forwarded=_legacy_demo_forward(request,custom=True)
+    if forwarded is not None:return forwarded
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    qid = request.POST.get("id")
     q = CustomQuery.objects.filter(id=qid).first()
     if not q:
         return JsonResponse({"error": "Query not found"}, status=404)
-    keyword = request.GET.get("keyword", "")
-    country = request.GET.get("country", "")
-    network = request.GET.get("network", "")
-    exclude = request.GET.get("exclude", "")
-    page = request.GET.get("page") or "1"
-    page_count = request.GET.get("page_count") or "1"
-    active_probe = _flag(request.GET.get("active_probe", q.active_probe_default))
-    provider = (request.GET.get("provider") or q.provider or "shodan").lower()
+    keyword = request.POST.get("keyword", "")
+    country = request.POST.get("country", "")
+    network = request.POST.get("network", "")
+    exclude = request.POST.get("exclude", "")
+    page = request.POST.get("page") or "1"
+    page_count = request.POST.get("page_count") or "1"
+    active_probe = _flag(request.POST.get("active_probe", q.active_probe_default))
+    provider = (request.POST.get("provider") or q.provider or "shodan").lower()
     if provider not in ("shodan", "zoomeye"):
         provider = "shodan"
 
@@ -722,47 +643,7 @@ def custom_query_run(request):
 
 
 def _model_by_type(type_name):
-    model_map = {
-        "angular": Angular,
-        "amazons3be": Amazons3be,
-        "amazonbe": Amazonbe,
-        "amazonbuckets": AmazonBuckets,
-        "gitlab": Gitlab,
-        "elastic": Elastic,
-        "dirs": Dirs,
-        "jenkins": Jenkins,
-        "mongo": Mongo,
-        "rsync": Rsync,
-        "sonarqube": Sonarqube,
-        "couchdb": Couchdb,
-        "kibana": Kibana,
-        "cassandra": Cassandra,
-        "rethink": Rethink,
-        "ftp": Ftp,
-        "opensearch": OpenSearch,
-        "grafana": Grafana,
-        "prometheus": Prometheus,
-        "minio": Minio,
-        "swagger": Swagger,
-        "mongoexpress": MongoExpress,
-        "keys": Keys,
-        "javascript": Javascript,
-        "github": Github,
-        "nexus": Nexus,
-        "artifactory": Artifactory,
-        "registry": Registry,
-        "harbor": Registry,
-        "dockerapi": Registry,
-        "etcd": Etcd,
-        "consul": ConsulKV,
-        "rabbitmq": Rabbitmq,
-        "solr": Solr,
-        "gitea": Gitea,
-        "gogs": Gogs,
-        "azureblob": AzureBlob,
-        "gcsbucket": GcsBucket,
-    }
-    return model_map.get((type_name or "").lower())
+    return model_for_type(type_name)
 
 
 def _preview_types():
@@ -832,9 +713,11 @@ def preview_targets(request):
 
 
 def preview_start(request):
-    type_name = request.GET.get("type")
-    target_id = request.GET.get("target_id")
-    active_probe = _flag(request.GET.get("active_probe", False))
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    type_name = request.POST.get("type")
+    target_id = request.POST.get("target_id")
+    active_probe = _flag(request.POST.get("active_probe", False))
     Model = _model_by_type(type_name)
     if not Model or not target_id:
         return JsonResponse({"error": "invalid"}, status=400)
@@ -846,25 +729,27 @@ def preview_start(request):
 
 
 def export_start(request):
-    type_name = request.GET.get("type")
-    target_id = request.GET.get("target_id")
-    active_probe = _flag(request.GET.get("active_probe", False))
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    type_name = request.POST.get("type")
+    target_id = request.POST.get("target_id")
+    active_probe = _flag(request.POST.get("active_probe", False))
     if not active_probe:
         return JsonResponse({"error": "Active probing required for export"}, status=400)
     selection = {
-        "index": request.GET.get("index") or request.GET.get("db"),
-        "db": request.GET.get("db"),
-        "collection": request.GET.get("collection"),
-        "repo": request.GET.get("repo"),
-        "bucket": request.GET.get("bucket"),
-        "keyspace": request.GET.get("keyspace"),
-        "table": request.GET.get("table"),
-        "filter": request.GET.get("filter"),
-        "max_repos": request.GET.get("max_repos"),
-        "max_tags": request.GET.get("max_tags"),
+        "index": request.POST.get("index") or request.POST.get("db"),
+        "db": request.POST.get("db"),
+        "collection": request.POST.get("collection"),
+        "repo": request.POST.get("repo"),
+        "bucket": request.POST.get("bucket"),
+        "keyspace": request.POST.get("keyspace"),
+        "table": request.POST.get("table"),
+        "filter": request.POST.get("filter"),
+        "max_repos": request.POST.get("max_repos"),
+        "max_tags": request.POST.get("max_tags"),
     }
-    max_items = request.GET.get("max_items", 1000)
-    fmt = request.GET.get("format", "json")
+    max_items = request.POST.get("max_items", 1000)
+    fmt = request.POST.get("format", "json")
     task_res = tasks.export_preview_data.delay(
         type=type_name,
         target_id=target_id,
@@ -877,9 +762,11 @@ def export_start(request):
 
 
 def explore_start(request):
-    type_name = request.GET.get("type", "").lower()
-    target_id = request.GET.get("target_id")
-    active_probe = _flag(request.GET.get("active_probe", False))
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    type_name = request.POST.get("type", "").lower()
+    target_id = request.POST.get("target_id")
+    active_probe = _flag(request.POST.get("active_probe", False))
     if not active_probe:
         return JsonResponse({"error": "Active probing required"}, status=400)
     Model = _model_by_type(type_name)
@@ -890,11 +777,7 @@ def explore_start(request):
         return JsonResponse({"error": "not found"}, status=404)
 
     def _split(val):
-        if isinstance(val, list):
-            return val
-        if isinstance(val, str):
-            return [v.strip() for v in val.split(",") if v.strip()]
-        return []
+        return parse_list(val)
 
     export_options = {}
     if type_name in ("elastic", "opensearch"):
@@ -952,9 +835,11 @@ def explore_start(request):
 
 
 def explore_next(request):
-    type_name = request.GET.get("type", "").lower()
-    target_id = request.GET.get("target_id")
-    active_probe = _flag(request.GET.get("active_probe", False))
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    type_name = request.POST.get("type", "").lower()
+    target_id = request.POST.get("target_id")
+    active_probe = _flag(request.POST.get("active_probe", False))
     if not active_probe:
         return JsonResponse({"error": "Active probing required"}, status=400)
     Model = _model_by_type(type_name)
@@ -965,21 +850,17 @@ def explore_next(request):
         return JsonResponse({"error": "not found"}, status=404)
 
     def _split(val):
-        if isinstance(val, list):
-            return val
-        if isinstance(val, str):
-            return [v.strip() for v in val.split(",") if v.strip()]
-        return []
+        return parse_list(val)
 
     selection = {
-        "index": request.GET.get("index") or request.GET.get("db"),
-        "db": request.GET.get("db"),
-        "collection": request.GET.get("collection"),
-        "repo": request.GET.get("repo"),
-        "bucket": request.GET.get("bucket"),
-        "filter": request.GET.get("filter", ""),
-        "keyspace": request.GET.get("keyspace"),
-        "max_items": request.GET.get("max_items"),
+        "index": request.POST.get("index") or request.POST.get("db"),
+        "db": request.POST.get("db"),
+        "collection": request.POST.get("collection"),
+        "repo": request.POST.get("repo"),
+        "bucket": request.POST.get("bucket"),
+        "filter": request.POST.get("filter", ""),
+        "keyspace": request.POST.get("keyspace"),
+        "max_items": request.POST.get("max_items"),
     }
     filter_text = (selection.get("filter") or "").lower()
     items = []
@@ -1188,16 +1069,20 @@ def explore_next(request):
 
 
 def export_download(request, token: str):
-    export_dir = Path("/tmp/leakscope_exports")
-    matches = list(export_dir.glob(f"{token}.*"))
-    if not matches:
-        return HttpResponse("Not found", status=404)
-    file_path = matches[0]
-    content = file_path.read_bytes()
-    file_path.unlink(missing_ok=True)
-    response = HttpResponse(content, content_type="application/octet-stream")
-    response['Content-Disposition'] = f'attachment; filename=\"{file_path.name}\"'
-    return response
+    import re
+    import time
+    if not re.fullmatch(r'[a-f0-9]{32}',token):
+        return HttpResponse("Not found",status=404)
+    export_dir=Path(getattr(settings,'LEAKSCOPE_EXPORT_DIR','/tmp/leakscope_exports'))
+    ttl=int(getattr(settings,'LEAKSCOPE_EXPORT_TTL',getattr(settings,'LEAKSCOPE_EXPORT_TTL_SECONDS',86400)))
+    for extension in ('json','csv','md','txt'):
+        file_path=export_dir/(token+'.'+extension)
+        if file_path.is_file():
+            if time.time()-file_path.stat().st_mtime>ttl:
+                file_path.unlink(missing_ok=True)
+                return HttpResponse("Export expired",status=410)
+            return FileResponse(file_path.open('rb'),as_attachment=True,filename=file_path.name,content_type={'json':'application/json','csv':'text/csv','md':'text/markdown; charset=utf-8','txt':'text/plain; charset=utf-8'}[extension])
+    return HttpResponse("Not found",status=404)
 
 
 def export_results(request):

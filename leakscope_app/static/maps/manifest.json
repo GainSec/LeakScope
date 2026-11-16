@@ -1,0 +1,12 @@
+{
+  "coverage": "Global country and continent overview; street-detail datasets intentionally omitted",
+  "source": "Natural Earth country boundaries",
+  "source_url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson",
+  "license": "Public domain",
+  "version": "ne_110m_admin_0",
+  "features": 177,
+  "geojson_sha256": "6e996c9f23707e3e8fef800cd409084c69e5eeb6378a9e963c8d2c6bd6dd11ec",
+  "maplibre_version": "6.17.0",
+  "font_source": "https://github.com/protomaps/basemaps-assets",
+  "font_license": "Noto Sans: SIL Open Font License 1.1"
+}

@@ -1,0 +1,66 @@
+# Load after docker-compose.yml; retain the base file for SQLite rollback.
+# Generate LEAKSCOPE_DB_PASSWORD with secrets.token_urlsafe(), then keep it in
+# the private deployment .env. Never print full resolved Compose configuration.
+x-database: &database
+  DATABASE_URL: "postgresql://leakscope:${LEAKSCOPE_DB_PASSWORD:?Set a private URL-safe LEAKSCOPE_DB_PASSWORD}@postgres:5432/leakscope"
+
+services:
+  postgres:
+    image: postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: leakscope
+      POSTGRES_USER: leakscope
+      POSTGRES_PASSWORD: "${LEAKSCOPE_DB_PASSWORD:?Set a private URL-safe LEAKSCOPE_DB_PASSWORD}"
+    volumes:
+      - type: bind
+        source: ${LEAKSCOPE_POSTGRES_DATA_ROOT:-${LEAKSCOPE_DATA_ROOT:-./.runtime/docker}/postgres}
+        target: /var/lib/postgresql
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U leakscope -d leakscope"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  migrate:
+    environment: *database
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    environment: *database
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    environment: *database
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  beat:
+    environment: *database
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  certstream-ingestor:
+    environment: *database
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  fetch:
+    environment: *database
+    depends_on:
+      postgres:
+        condition: service_healthy
