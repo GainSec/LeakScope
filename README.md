@@ -1,6 +1,6 @@
 # LeakScope
 
-LeakScope is a self-hosted workbench for finding, collecting and reviewing exposed services. It searches Shodan, ZoomEye and Netlas, saves every result with its source and timestamps, captures screenshots and protocol evidence, watches certificate transparency for your domains, and lets you chain all of it into no-code workflows.
+LeakScope is a self-hosted workbench for finding, collecting and reviewing exposed services. It searches many different services and APIs, saves every result with its source and timestamps, captures screenshots and protocol evidence, watches certificate transparency for your domains, and lets you chain all of it into no-code workflows.
 
 ![LeakScope overview](docs/readme/home.png)
 
